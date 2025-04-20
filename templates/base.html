@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Venn-Cast{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2.0">
+</head>
+<body>
+    <header>
+        <h1><a href="/">Venn-Cast</a></h1>
+    </header>
+    <main>
+    <nav style="background: #222; color: #fff; padding: 0.5rem;">
+      <a href="/" style="margin-right: 1rem; color: #fff;">🏠 Home</a>
+      <a href="/character-summary" style="margin-right: 1rem; color: #fff;">📖 Character Summary</a>
+      <a href="/chat-as-character" style="margin-right: 1rem; color: #fff;">💬 Chat</a>
+      <a href="/admin/summaries" style="color: #fff;">🗂️ Admin Summaries</a>
+    </nav>
+        {% block content %}{% endblock %}
+    </main>
+{% block scripts %}{% endblock %}
+<script src="{{ url_for('static', filename='js/autocomplete.js') }}?v=2"></script>
+</body>
+</html>

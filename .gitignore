@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+
+# Flask instance folder
+instance/
+
+# Editor & OS files
+*.swp
+.DS_Store
+.vscode/
+
+# SQLite databases
+*.db
+*.sqlite3
+
+# Log files
+*.log
+
+# Environment variables
+.env

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+  {% if summary %}
+    <div class="card mx-auto" style="max-width: 700px;">
+      <div class="card-body text-center">
+        {% if image_url %}
+          <img src="{{ image_url }}" class="profile-img-large mb-3" alt="{{ character }}">
+        {% endif %}
+
+        <h2 class="char-title">{{ character }}</h2>
+        {% if actor_name %}
+          <p class="char-actor text-muted">Played by {{ actor_name }}</p>
+        {% endif %}
+
+        {% if summary.quote %}
+          <blockquote class="char-quote">“{{ summary.quote }}”</blockquote>
+        {% endif %}
+
+        <div class="text-start">
+          <h3 class="section-title">Personality & Traits</h3>
+          <p>{{ summary.traits or "Not available." }}</p>
+
+          <h3 class="section-title">Key Events</h3>
+          <p>{{ summary.events or "Not available." }}</p>
+
+          <h3 class="section-title">Relationships</h3>
+          {% if summary.relationships %}
+            <ul class="list-group list-group-flush">
+              {% for name, role in summary.relationships %}
+                <li class="list-group-item"><strong>{{ name }}</strong>: {{ role }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-muted">No relationships found.</p>
+          {% endif %}
+
+          <h3 class="section-title">Importance to the Story</h3>
+          <p>{{ summary.importance or "Not available." }}</p>
+
+          <p class="text-muted small mt-3">Source: {{ source | capitalize }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-center mt-4">
+      <a href="{{ url_for('main.character_summary') }}" class="btn btn-secondary">Back to Search</a>
+    </div>
+
+    {% if related_characters %}
+      <div class="card mx-auto mt-4" style="max-width: 700px;">
+        <div class="card-header">Other Characters in {{ show }}</div>
+        <ul class="list-group list-group-flush">
+          {% for other in related_characters %}
+            {% if other != character %}
+              <li class="list-group-item">
+                <a href="{{ url_for('main.character_summary') }}?character={{ other }}&show={{ show }}&season={{ season }}&episode={{ episode }}">{{ other }}</a>
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+  {% else %}
+    <!-- Search form -->
+    <div class="card mx-auto" style="max-width: 700px;">
+      <div class="card-header">Character Summary</div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('main.character_summary') }}">
+          <div class="mb-3">
+            <label for="show" class="form-label">Show Title</label>
+            <input type="text" id="show" name="show" class="form-control" placeholder="e.g. The Leftovers" required>
+          </div>
+          <div class="mb-3">
+            <label for="character" class="form-label">Character Name</label>
+            <input type="text" id="character" name="character" class="form-control" placeholder="e.g. Nora Durst" required>
+          </div>
+          <div class="row">
+            <div class="col">
+              <label for="season" class="form-label">Season</label>
+              <input type="number" id="season" name="season" class="form-control" min="1" value="1" required>
+            </div>
+            <div class="col">
+              <label for="episode" class="form-label">Episode</label>
+              <input type="number" id="episode" name="episode" class="form-control" min="1" value="1" required>
+            </div>
+          </div>
+          <div class="mt-3 text-end">
+            <button type="submit" class="btn btn-primary">Generate Summary</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+  {% if reference_links %}
+    <div class="mt-4 text-sm text-gray-500">
+      <strong>Explore More:</strong>
+      {% for label, url in reference_links %}
+        <a href="{{ url }}" target="_blank" class="inline-block bg-gray-200 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mt-2 hover:bg-gray-300">
+          {{ label }}
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/autocomplete.js') }}?v=5"></script>
+<script>
+  {% if not summary %}
+    setupAutocomplete(document.getElementById("show"), "shows");
+    setupAutocomplete(document.getElementById("character"), "characters", document.getElementById("show"));
+  {% endif %}
+</script>
+{% endblock %}

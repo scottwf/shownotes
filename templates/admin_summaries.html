@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+  <h2>Saved Character Summaries</h2>
+  {% if summaries %}
+    <table>
+      <thead>
+        <tr>
+          <th>Character</th>
+          <th>Show</th>
+          <th>Season</th>
+          <th>Episode</th>
+          <th>Created At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for char, show, season, episode, created in summaries %}
+          <tr>
+            <td>{{ char }}</td>
+            <td>{{ show }}</td>
+            <td>{{ season }}</td>
+            <td>{{ episode }}</td>
+            <td>{{ created }}</td>
+            <td>
+              <a href="{{ url_for('main.character_summary') }}?character={{ char }}&show={{ show }}&season={{ season }}&episode={{ episode }}">
+                View Summary
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No summaries found.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Chat with a Character{% endblock %}
+
+{% block content %}
+<div class="chat-container">
+  <h2>Chat with a Character</h2>
+
+  <form method="POST" autocomplete="off">
+    <label for="show">Show:</label>
+    <input type="text" id="title1" name="show" value="{{ show or '' }}" required>
+    <div id="suggestions1" class="autocomplete-suggestions"></div>
+
+    <label for="character">Character:</label>
+    <input type="text" id="character" name="character" value="{{ character or '' }}" required>
+    <div id="suggestions-character" class="autocomplete-suggestions"></div>
+
+    <label for="message">Your Message:</label>
+    <textarea id="message" name="message" rows="2" required placeholder="Ask a question...">{{ message or '' }}</textarea>
+
+    <button type="submit">Send</button>
+  </form>
+
+  {% if character_name %}
+  <div class="character-header">
+    {% if image_url %}
+      <img src="{{ image_url }}" alt="{{ character_name }}" class="avatar">
+    {% endif %}
+    <strong>{{ character_name }} ({{ show }})</strong>
+  </div>
+  {% endif %}
+
+  {% if user_message %}
+  <div class="chat-bubble user">
+    <div class="bubble-text">
+      <strong>You:</strong> {{ user_message }}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if reply %}
+  <div class="chat-bubble character">
+    <div class="bubble-text">
+      {{ reply }}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block script %}
+<script src="{{ url_for('static', filename='js/autocomplete.js') }}?v=2"></script>
+{% endblock %}

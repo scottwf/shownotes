@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Compare Shows or Movies{% endblock %}
+
+{% block content %}
+
+{% if backdrop_url %}
+<div style="background-image: url('{{ backdrop_url }}'); background-size: cover; background-position: center; height: 300px;">
+  <div style="background-color: rgba(0,0,0,0.5); height: 100%; display: flex; align-items: center; justify-content: center;">
+    <h1 style="color: white; font-size: 2rem;">Explore the World of {{ latest_show }}</h1>
+  </div>
+</div>
+{% endif %}
+<div class="homepage-cards">
+
+  <!-- Card 1: Overlapping Cast -->
+  <div class="card">
+    <h2>Compare Shows or Movies</h2>
+    <form method="post" action="/compare">
+
+      <label for="title1">First Show or Movie:</label>
+      <div style="position: relative;">
+        <input type="text" id="title1" name="title1" autocomplete="off" placeholder="e.g. Breakign Bad" required>
+        <div id="suggestions1" class="autocomplete-suggestions"></div>
+      </div>
+
+      <label for="title2">Second Show or Movie:</label>
+      <div style="position: relative;">
+        <input type="text" id="title2" name="title2" autocomplete="off" placeholder="e.g. Better Call Saul" required">
+        <div id="suggestions2" class="autocomplete-suggestions"></div>
+      </div>
+
+      <button type="submit">Find Shared Cast</button>
+    </form>
+  </div>
+
+<!-- Card 2: Character Insight -->
+<div class="card">
+  <h2>Explore a Character</h2>
+  <form method="get" action="/character-summary">
+
+    <label for="show_name">Show or Movie:</label>
+    <div style="position: relative;">
+      <input type="text" id="show_name" name="show" autocomplete="off" placeholder="e.g. Better Call Saul" required>
+      <div id="suggestions-show" class="autocomplete-suggestions"></div>
+    </div>
+
+    <label for="character_name">Character Name:</label>
+    <div style="position: relative;">
+      <input type="text" id="character_name" name="character" autocomplete="off" placeholder="e.g. Jimmy McGill" required>
+      <div id="suggestions-character" class="autocomplete-suggestions"></div>
+    </div>
+
+    <button type="submit">Explore Character</button>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/autocomplete.js') }}?v=123"></script>
+{% endblock %}

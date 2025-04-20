@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Shared Cast{% endblock %}
+
+{% block content %}
+<div class="results-container">
+  <h2>Actors in Both "{{ title1 }}" and "{{ title2 }}"</h2>
+
+  {% if shared %}
+    <p class="actor-count">{{ count }} actors found:</p>
+
+    <ul class="actor-list">
+      {% for actor in shared %}
+        {% if actor in actor_details %}
+          <li class="actor-card">
+            <div>
+              {% if actor_details[actor].image %}
+                <img src="{{ actor_details[actor].image }}" alt="{{ actor }}">
+              {% endif %}
+            </div>
+            <div class="actor-card-content">
+              <strong>{{ actor }}</strong>
+
+              {% for show, info in actor_details[actor].shows.items() %}
+                <div class="show-role">
+                  <strong>{{ show }}</strong>:
+                  {% if info.character %}<em>{{ info.character }}</em>{% endif %}
+                  {% if info.episode_count %} ({{ info.episode_count }} episodes){% endif %}
+                </div>
+              {% endfor %}
+
+              {% if actor_details[actor].known_for %}
+                <div class="known-for">
+                  Known for: {{ actor_details[actor].known_for | join(', ') }}
+                </div>
+              {% endif %}
+
+              <a href="{{ actor_details[actor].tmdb_url }}" target="_blank">View on TMDB</a>
+            </div>
+          </li>
+        {% else %}
+          <li class="actor-card placeholder">{{ actor }} (not loaded)</li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No shared actors found.</p>
+  {% endif %}
+
+  <p><a class="back-link" href="/">Compare another pair</a></p>
+</div>
+{% endblock %}
