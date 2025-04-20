@@ -1,0 +1,54 @@
+
+
+{% extends "base.html" %}
+{% block title %}API Usage{% endblock %}
+
+{% block head %}
+  {{ super() }}
+  <!-- DataTables CSS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+{% endblock %}
+
+{% block content %}
+  <div class="container mt-5">
+    <h1 class="mb-4">API Usage Log</h1>
+    <table id="apiUsageTable" class="display">
+      <thead>
+        <tr>
+          <th>Character</th>
+          <th>Show</th>
+          <th>Prompt Tokens</th>
+          <th>Completion Tokens</th>
+          <th>Total Tokens</th>
+          <th>Cost (USD)</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for character, show, prompt, completion, total, cost, timestamp in usage_records %}
+        <tr>
+          <td>{{ character }}</td>
+          <td>{{ show }}</td>
+          <td>{{ prompt }}</td>
+          <td>{{ completion }}</td>
+          <td>{{ total }}</td>
+          <td>${{ '%.4f' | format(cost) }}</td>
+          <td>{{ timestamp }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <!-- jQuery + DataTables JS -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <script>
+    $(document).ready(function () {
+      $('#apiUsageTable').DataTable();
+    });
+  </script>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ latest_show }} – Show Summary{% endblock %}
+
+{% block content %}
+
+{% if backdrop_url %}
+<div class="show-header" style="background-image: url('{{ backdrop_url }}');">
+  <div class="overlay">
+    <h1>{{ latest_show }}</h1>
+    <p>{{ show_metadata[2] }}</p>  <!-- Description -->
+  </div>
+</div>
+{% endif %}
+
+<div class="show-details" style="padding: 20px;">
+
+  {% if seasons %}
+    <h2>Seasons</h2>
+    <div class="row g-4">
+      {% set seen_seasons = [] %}
+      {% for number, description, poster in seasons %}
+        {% if number not in seen_seasons %}
+          {% set _ = seen_seasons.append(number) %}
+          <div class="col-md-4">
+            <div class="card h-100 shadow-sm" style="transition: transform 0.3s;">
+              {% if poster %}
+                <a href="/season-summary?show={{ latest_show | urlencode }}&season={{ number }}">
+                  <img src="{{ poster }}" class="card-img-top" alt="Season {{ number }} poster" style="max-height: 300px; object-fit: cover;">
+                </a>
+              {% endif %}
+              <div class="card-body text-center">
+                <h5 class="card-title">Season {{ number }}</h5>
+                <p class="card-text">{{ description }}</p>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if top_characters %}
+    <h2 class="mt-5">Top Characters</h2>
+    <p>Found {{ top_characters | length }} characters</p>
+    <div class="row g-4">
+      {% for character, actor, count in top_characters[:10] %}
+        <div class="col-md-4">
+          <div class="card h-100 text-center shadow-sm" style="transition: transform 0.3s;">
+            {% if actor_images and actor_images.get(character) %}
+              <img src="{{ actor_images[character] }}" class="card-img-top" alt="{{ character }}" style="max-height: 250px; object-fit: cover;">
+            {% endif %}
+            <div class="card-body">
+              <h5 class="card-title">{{ character }}</h5>
+              <p class="card-text text-muted">Played by {{ actor }}<br>{{ count }} episodes</p>
+              <a href="/character-summary?show_title={{ latest_show | urlencode }}&character_name={{ character | urlencode }}&season_limit={{ seasons | length }}" class="btn btn-outline-primary btn-sm">Generate Summary</a>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+</div>
+
+<style>
+.card {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.card:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 15px rgba(0,0,0,0.2);
+}
+</style>
+
+{% endblock %}

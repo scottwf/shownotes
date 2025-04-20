@@ -4,6 +4,7 @@ import requests
 import sqlite3
 import re
 import json
+import logging
 from openai import OpenAI
 
 load_dotenv()
@@ -344,3 +345,123 @@ def get_show_backdrop(title):
             if backdrop_path:
                 return f"https://image.tmdb.org/t/p/original{backdrop_path}"
     return None
+
+# --- Show Metadata Utilities ---
+
+def save_show_metadata(show_id, show_title, description, poster_url):
+    """
+    Save show-level metadata to the database.
+    """
+    conn = sqlite3.connect("data/shownotes.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT OR REPLACE INTO show_metadata (show_id, show_title, description, poster_url)
+        VALUES (?, ?, ?, ?)
+    """, (show_id, show_title, description, poster_url))
+    conn.commit()
+    conn.close()
+
+def get_show_metadata(show_title):
+    """
+    Retrieve show metadata by title.
+    """
+    conn = sqlite3.connect("data/shownotes.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT show_title, show_id, description
+        FROM show_metadata
+        WHERE show_title = ?
+    """, (show_title,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+# --- Season Metadata Utilities ---
+
+def save_season_metadata(show_title, season_number, season_description, season_poster_url):
+    """
+    Save metadata about a specific season of a show.
+    """
+    conn = sqlite3.connect("data/shownotes.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT OR REPLACE INTO season_metadata (show_title, season_number, season_description, season_poster_url)
+        VALUES (?, ?, ?, ?)
+    """, (show_title, season_number, season_description, season_poster_url))
+    conn.commit()
+    conn.close()
+
+def get_season_metadata(show_title):
+    """
+    Retrieve metadata for all seasons of a given show.
+    """
+    conn = sqlite3.connect("data/shownotes.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT season_number, season_description, season_poster_url
+        FROM season_metadata
+        WHERE show_title = ?
+        ORDER BY season_number ASC
+    """, (show_title,))
+    seasons = cursor.fetchall()
+    conn.close()
+    return seasons
+
+# --- Top Characters Utilities ---
+
+def save_top_characters(show_title, character_list):
+    """
+    Save top characters for a show. Expects a list of tuples: (character_name, actor_name, episode_count).
+    """
+    conn = sqlite3.connect("data/shownotes.db")
+    cursor = conn.cursor()
+    for character in character_list:
+        if len(character) >= 3:
+            name, actor, count = character[:3]
+            cursor.execute("""
+                INSERT OR REPLACE INTO top_characters (show_title, character_name, actor_name, episode_count)
+                VALUES (?, ?, ?, ?)
+            """, (show_title, name, actor, count))
+        else:
+            logging.warning(f"Skipping character entry due to unexpected format: {character}")
+    conn.commit()
+    conn.close()
+
+def get_top_characters(show_title, limit=10):
+    """
+    Retrieve the top characters for a show, sorted by episode count.
+    """
+    conn = sqlite3.connect("data/shownotes.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT character_name, actor_name, episode_count
+        FROM top_characters
+        WHERE show_title = ?
+        ORDER BY episode_count DESC
+        LIMIT ?
+    """, (show_title, limit))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_season_details(show_id):
+    """
+    Fetch metadata for all seasons of a given show from TMDB.
+    """
+    url = f"https://api.themoviedb.org/3/tv/{show_id}"
+    response = requests.get(url, params={"api_key": TMDB_API_KEY})
+    if response.status_code != 200:
+        logging.error(f"Failed to fetch show metadata for show_id {show_id}")
+        return []
+
+    data = response.json()
+    seasons = data.get("seasons", [])
+    return [
+        (
+            s.get("season_number"),
+            s.get("overview", "No description available."),
+            f"https://image.tmdb.org/t/p/w300{s.get('poster_path')}" if s.get("poster_path") else None
+        )
+        for s in seasons
+        if s.get("season_number") != 0  # Skip specials
+    ]

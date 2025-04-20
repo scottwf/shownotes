@@ -1,4 +1,3 @@
-# scripts/init_db.py
 import sqlite3
 import os
 
@@ -53,31 +52,44 @@ CREATE TABLE IF NOT EXISTS gpt_chats (
 )
 ''')
 
+# Table: Show metadata
+c.execute('''
+CREATE TABLE IF NOT EXISTS show_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    show_id INTEGER,
+    show_title TEXT UNIQUE,
+    description TEXT,
+    poster_url TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+''')
+
+# Table: Season metadata
+c.execute('''
+CREATE TABLE IF NOT EXISTS season_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+        show_id INTEGER,
+        show_title TEXT,
+        season_number INTEGER,
+        season_description TEXT,
+        season_poster_url TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+''')
+
+# Table: Top characters
+c.execute('''
+CREATE TABLE IF NOT EXISTS top_characters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    show_title TEXT,
+    character_name TEXT,
+    actor_name TEXT,
+    profile_path TEXT,
+    episode_count INTEGER,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+''')
+
 conn.commit()
 conn.close()
 print("✅ Database initialized.")
-
-import sqlite3
-import os
-
-os.makedirs("data", exist_ok=True)
-
-conn = sqlite3.connect("data/shownotes.db")
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS character_summaries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    character TEXT,
-    show TEXT,
-    season_limit INTEGER,
-    episode_limit INTEGER,
-    raw_summary TEXT,
-    summary TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-""")
-
-conn.commit()
-conn.close()
-print("Database initialized.")

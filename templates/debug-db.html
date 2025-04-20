@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Current Watch Debug{% endblock %}
+
+{% block content %}
+  <h1>Current Watch Debug View</h1>
+
+  {% if rows %}
+    <table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; margin-top: 20px;">
+      <thead>
+        <tr>
+          <th>Show Title</th>
+          <th>Season</th>
+          <th>Episode</th>
+          <th>Username</th>
+          <th>Updated At</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for show, season, episode, username, updated_at in rows %}
+        <tr>
+          <td>{{ show }}</td>
+          <td>{{ season }}</td>
+          <td>{{ episode }}</td>
+          <td>{{ username }}</td>
+          <td>{{ updated_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No entries found in <code>current_watch</code> table.</p>
+  {% endif %}
+{% endblock %}

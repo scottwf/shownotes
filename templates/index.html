@@ -2,57 +2,80 @@
 {% block title %}Compare Shows or Movies{% endblock %}
 
 {% block content %}
-
 {% if backdrop_url %}
-<div style="background-image: url('{{ backdrop_url }}'); background-size: cover; background-position: center; height: 300px;">
-  <div style="background-color: rgba(0,0,0,0.5); height: 100%; display: flex; align-items: center; justify-content: center;">
-    <h1 style="color: white; font-size: 2rem;">Explore the World of {{ latest_show }}</h1>
+  <div style="background-image: url('{{ backdrop_url }}'); background-size: cover; background-position: center; height: 240px; border-radius: 8px; margin: 20px auto; max-width: 800px;">
   </div>
-</div>
 {% endif %}
+
 <div class="homepage-cards">
 
-  <!-- Card 1: Overlapping Cast -->
-  <div class="card">
-    <h2>Compare Shows or Movies</h2>
-    <form method="post" action="/compare">
+  <!-- Current Viewing Status Card -->
+  <div class="card" style="max-width: 400px; margin: 0 auto;">
+    <div class="card-header">
+      <h2>Currently Watching</h2>
+    </div>
+    <div class="card-content">
+      {% if show_metadata and show_metadata[1] %}
+        <div style="text-align: center; margin-bottom: 10px;">
+          <img src="{{ show_metadata[1] }}" alt="{{ latest_show }} poster" style="max-height: 200px; border-radius: 4px;">
+        </div>
+      {% endif %}
+      {% if latest_show %}
+        <p><strong>Show:</strong> {{ latest_show }}</p>
+      {% endif %}
+      {% if current_season and current_episode %}
+        <p><strong>Season:</strong> {{ current_season }}</p>
+        <p><strong>Episode:</strong> {{ current_episode }}</p>
+      {% endif %}
+      {% if current_user %}
+        <p><strong>Username:</strong> {{ current_user }}</p>
+      {% endif %}
+      <p>You can explore this show's characters and summaries as you watch!</p>
 
-      <label for="title1">First Show or Movie:</label>
-      <div style="position: relative;">
-        <input type="text" id="title1" name="title1" autocomplete="off" placeholder="e.g. Breakign Bad" required>
-        <div id="suggestions1" class="autocomplete-suggestions"></div>
-      </div>
+      {% if show_metadata and show_metadata[2] %}
+        <p style="margin-top: 15px; font-style: italic;">{{ show_metadata[2] }}</p>
+      {% endif %}
 
-      <label for="title2">Second Show or Movie:</label>
-      <div style="position: relative;">
-        <input type="text" id="title2" name="title2" autocomplete="off" placeholder="e.g. Better Call Saul" required">
-        <div id="suggestions2" class="autocomplete-suggestions"></div>
-      </div>
-
-      <button type="submit">Find Shared Cast</button>
-    </form>
+      {% if top_characters %}
+        <h3>Main Characters</h3>
+        <ul>
+          {% for character, actor, count in top_characters %}
+            <li><strong>{{ character }}</strong> ({{ actor }}) – {{ count }} episodes</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
   </div>
 
-<!-- Card 2: Character Insight -->
-<div class="card">
-  <h2>Explore a Character</h2>
-  <form method="get" action="/character-summary">
-
-    <label for="show_name">Show or Movie:</label>
-    <div style="position: relative;">
-      <input type="text" id="show_name" name="show" autocomplete="off" placeholder="e.g. Better Call Saul" required>
-      <div id="suggestions-show" class="autocomplete-suggestions"></div>
-    </div>
-
-    <label for="character_name">Character Name:</label>
-    <div style="position: relative;">
-      <input type="text" id="character_name" name="character" autocomplete="off" placeholder="e.g. Jimmy McGill" required>
-      <div id="suggestions-character" class="autocomplete-suggestions"></div>
-    </div>
-
-    <button type="submit">Explore Character</button>
-  </form>
 </div>
+
+{% if recent_views %}
+<div class="recent-plays" style="margin-top: 40px; text-align: center;">
+  <h2>Recent Views</h2>
+  <ul style="list-style-type: none; padding: 0;">
+    {% for item in recent_views %}
+      <li style="margin-bottom: 10px;">
+        <strong>{{ item.show }}</strong> — Season {{ item.season }}, Episode {{ item.episode }} 
+        <br>
+        <small style="color: #666;">Viewed by {{ item.username }}</small>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if not latest_show and recent_shows %}
+  <div class="recent-shows">
+    <h2>Recently Explored Shows</h2>
+    <div class="card-grid" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
+      {% for show in recent_shows %}
+        <a href="/show/{{ show | urlencode }}" class="card" style="text-decoration: none; color: inherit; max-width: 200px; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center;">
+          <h3>{{ show }}</h3>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
