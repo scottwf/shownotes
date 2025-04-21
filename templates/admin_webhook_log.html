@@ -1,0 +1,40 @@
+
+
+{% extends "base.html" %}
+
+{% block title %}Webhook Log - Admin{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  {% include 'admin_menu.html' %}
+  <h2 class="mb-4">Webhook Log</h2>
+  {% if logs %}
+    <div class="table-responsive">
+      <table class="table table-striped table-hover">
+        <thead class="table-dark">
+          <tr>
+            <th>Show Title</th>
+            <th>Season</th>
+            <th>Episode</th>
+            <th>Username</th>
+            <th>Received At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td>{{ log[0] }}</td>
+            <td>{{ log[1] }}</td>
+            <td>{{ log[2] }}</td>
+            <td>{{ log[3] }}</td>
+            <td>{{ log[4] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No webhook log entries found.</p>
+  {% endif %}
+</div>
+{% endblock %}

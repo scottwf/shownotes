@@ -2,47 +2,103 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>{% block title %}Venn-Cast{% endblock %}</title>
+    <title>{% block title %}Show  Notes{% endblock %}</title>
+    <!-- Stylesheets -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2.0">
-    <!-- Bootstrap 5 CSS -->
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-      <div class="container-fluid">
-        <a class="navbar-brand" href="/">Venn-Cast</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
-          aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav ms-auto">
-            <li class="nav-item dropdown">
-              <a class="nav-link dropdown-toggle" href="#" id="pagesDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                Pages
-              </a>
-              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="pagesDropdown">
-                <li><a class="dropdown-item" href="/">Home</a></li>
-                <li><a class="dropdown-item" href="/character-summary">Character Summary</a></li>
-                <li><a class="dropdown-item" href="/chat-as-character">Chat as Character</a></li>
-                <li><a class="dropdown-item" href="/overlap">Actor Overlap</a></li>
-                <li><a class="dropdown-item" href="/search-actor">Search Actor</a></li>
-                <li><hr class="dropdown-divider"></li>
-                <li><a class="dropdown-item" href="/admin/summaries">Admin Summaries</a></li>
-                <li><a class="dropdown-item" href="/admin/api-usage">API Usage</a></li>
-                <li><a class="dropdown-item" href="/debug-db">Debug DB</a></li>
-              </ul>
-            </li>
-          </ul>
+    <nav class="navbar navbar-expand-lg navbar-dark" style="background-color: #c84b14;">
+        <div class="container-fluid">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="/" style="color: white; font-size: 1.5rem; font-weight: bold;">
+                <img src="{{ url_for('static', filename='img/shownotes-logo.png') }}" alt="ShowNotes Logo" height="56">
+                <span>ShowNotes</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="pagesDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            Pages
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="pagesDropdown">
+                            <li><a class="dropdown-item" href="/">Home</a></li>
+                            <li><a class="dropdown-item" href="/character-summary">Character Summary</a></li>
+                            <li><a class="dropdown-item" href="/chat-as-character">Chat as Character</a></li>
+                            <li><a class="dropdown-item" href="/overlap">Actor Overlap</a></li>
+                            <li><a class="dropdown-item" href="/search-actor">Search Actor</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/admin/summaries">Admin Summaries</a></li>
+                            <li><a class="dropdown-item" href="/admin/refresh-show">Refresh Show Metadata</a></li>
+                            <li><a class="dropdown-item" href="/admin/api-usage">API Usage</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.test_webhook') }}">Test Webhook</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.init_db') }}">Initialize Database</a></li>
+                            <li><a class="dropdown-item" href="/debug-db">Debug DB</a></li>
+                        </ul>
+                    </li>
+                    <!-- Dark Mode Toggle -->
+                    <li class="nav-item d-flex align-items-center">
+                        <div class="form-check form-switch text-white ms-3">
+                            <input class="form-check-input" type="checkbox" id="darkModeToggle">
+                            <label class="form-check-label" for="darkModeToggle">Dark Mode</label>
+                        </div>
+                    </li>
+                </ul>
+            </div>
         </div>
-      </div>
     </nav>
     <main>
         {% block content %}{% endblock %}
     </main>
-{% block scripts %}{% endblock %}
-<script src="{{ url_for('static', filename='js/autocomplete.js') }}?v=2"></script>
-<!-- Bootstrap 5 JS Bundle -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+    <script src="{{ url_for('static', filename='js/autocomplete.js') }}?v=2"></script>
+
+    <script>
+        const toggle = document.getElementById('darkModeToggle');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const currentTheme = localStorage.getItem('theme');
+
+        if (currentTheme === 'dark' || (!currentTheme && prefersDark)) {
+            document.documentElement.classList.add('dark');
+            toggle.checked = true;
+        }
+
+        toggle.addEventListener('change', () => {
+            if (toggle.checked) {
+                document.documentElement.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+            }
+        });
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('.tom-select').forEach(function (el) {
+                new TomSelect(el, {
+                    create: false,
+                    maxOptions: 10,
+                    valueField: 'name',
+                    labelField: 'name',
+                    searchField: 'name',
+                    load: function(query, callback) {
+                        fetch(`/autocomplete?q=${encodeURIComponent(query)}`)
+                            .then(response => response.json())
+                            .then(callback)
+                            .catch(() => callback());
+                    }
+                });
+            });
+        });
+    </script>
+    {% block page_scripts %}{% endblock %}
 </body>
 </html>

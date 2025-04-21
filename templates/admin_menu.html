@@ -1,0 +1,27 @@
+<div class="card mt-4">
+    <div class="card-header">
+      <a class="btn btn-link text-decoration-none fw-semibold" data-bs-toggle="collapse" href="#adminMenuCollapse" role="button" aria-expanded="false" aria-controls="adminMenuCollapse" style="cursor: pointer;">
+        ▸ Admin Tools
+      </a>
+    </div>
+    <div class="collapse" id="adminMenuCollapse">
+      <ul class="list-group list-group-flush">
+        <!-- Data & Monitoring -->
+        <li class="list-group-item active" aria-current="true">Data & Monitoring</li>
+        <li class="list-group-item"><a href="{{ url_for('main.admin_summaries') }}">Admin Summaries</a></li>
+        <li class="list-group-item"><a href="{{ url_for('main.admin_api_usage') }}">API Usage</a></li>
+        <li class="list-group-item"><a href="{{ url_for('main.admin_webhook_log') }}">Webhook Log</a></li>
+
+        <!-- Development & Tools -->
+        <li class="list-group-item active mt-3" aria-current="true">Development & Tools</li>
+        <li class="list-group-item"><a href="{{ url_for('main.refresh_show_metadata') }}">Refresh Show Metadata</a></li>
+        <li class="list-group-item"><a href="{{ url_for('main.test_webhook') }}">Test Webhook</a></li>
+        <li class="list-group-item"><a href="{{ url_for('main.init_db') }}">Initialize Database</a></li>
+        <li class="list-group-item"><a href="{{ url_for('main.debug_db') }}">Debug DB</a></li>
+
+        <!-- Future Tools -->
+        <li class="list-group-item text-muted">→ Model Prompt Tuning (coming soon)</li>
+        <li class="list-group-item text-muted">→ User Analytics Dashboard (coming soon)</li>
+      </ul>
+    </div>
+  </div>

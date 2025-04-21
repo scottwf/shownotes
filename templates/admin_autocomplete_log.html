@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Autocomplete Logs - ShowNotes Admin{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2>Autocomplete Selection Logs</h2>
+  <p class="text-muted">Most recent 100 selections</p>
+
+  <div class="table-responsive">
+    <table class="table table-striped table-bordered align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th>Term</th>
+          <th>Type</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for term, type, timestamp in logs %}
+        <tr>
+          <td>{{ term }}</td>
+          <td>{{ type }}</td>
+          <td>{{ timestamp }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="text-center text-muted">No logs found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

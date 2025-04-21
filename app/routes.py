@@ -5,6 +5,7 @@ import sqlite3
 import traceback
 import logging
 import json
+from datetime import datetime
 
 from app.utils import (
     get_show_metadata,
@@ -17,8 +18,11 @@ from app.utils import (
     save_show_metadata,
     save_season_metadata,
     save_top_characters,
-    get_latest_show_title_from_db
+    get_latest_show_title_from_db,
+    get_cached_summary, 
+    summarize_character
 )
+from app.prompt_builder import build_character_prompt
 from app.utils import find_actor_by_name
 
 main = Blueprint('main', __name__)
@@ -95,42 +99,42 @@ def compare():
 
 @main.route('/autocomplete/shows')
 def autocomplete_shows():
-    query = request.args.get('q', '')
-    results_tv = search_tmdb(query, 'tv').get('results', [])
-    results_movie = search_tmdb(query, 'movie').get('results', [])
-    titles = {result.get('name') or result.get('title') for result in results_tv + results_movie}
-    return jsonify(list(titles)[:10])
+    query = request.args.get('q', '').lower()
+    suggestions = []
+    try:
+        db = sqlite3.connect("data/shownotes.db")
+        cursor = db.execute("SELECT DISTINCT title FROM shows")
+        rows = cursor.fetchall()
+        for row in rows:
+            title = row[0]
+            if query in title.lower():
+                suggestions.append({"name": title})
+        db.close()
+    except Exception as e:
+        logging.error(f"Error fetching shows for autocomplete: {e}")
+    return jsonify(suggestions[:10])
 
 @main.route('/autocomplete/characters')
 def autocomplete_characters():
-    query = request.args.get('q', '')
-    context = request.args.get('context', '')
-    res_tv = search_tmdb(context, 'tv').get('results', [])
-    res_mv = search_tmdb(context, 'movie').get('results', [])
-    result = (res_tv + res_mv)[0] if (res_tv + res_mv) else None
-
-    if not result:
-        logging.warning("No result found for context.")
-        return jsonify([])
-
-    media_type = 'tv' if result in res_tv else 'movie'
-    cast = get_cast(result['id'], media_type)
-
+    query = request.args.get('q', '').lower()
+    show = request.args.get('show', '')
     suggestions = []
-    seen = set()
-    query_lc = query.lower()
-
-    for actor in cast:
-        char_name = actor.get('character', '')
-        actor_name = actor.get('name', '')
-
-        if query_lc in char_name.lower() and char_name.lower() not in seen:
-            suggestions.append(f"{char_name} ({actor_name})")
-            seen.add(char_name.lower())
-        elif query_lc in actor_name.lower() and actor_name.lower() not in seen:
-            suggestions.append(f"{char_name} ({actor_name})" if char_name else actor_name)
-            seen.add(actor_name.lower())
-
+    try:
+        db = sqlite3.connect("data/shownotes.db")
+        cursor = db.execute("""
+            SELECT character_name, actor_name
+            FROM top_characters
+            WHERE show_title = ?
+        """, (show,))
+        rows = cursor.fetchall()
+        seen = set()
+        for character, actor in rows:
+            if (query in character.lower() or query in actor.lower()) and character.lower() not in seen:
+                suggestions.append({"name": f"{character} ({actor})"})
+                seen.add(character.lower())
+        db.close()
+    except Exception as e:
+        logging.error(f"Error fetching characters for autocomplete: {e}")
     return jsonify(suggestions[:10])
 
 @main.route('/character-summary', methods=['GET', 'POST'])
@@ -151,7 +155,14 @@ def character_summary():
         source = "cache" if summary else "generated"
 
         if not summary:
-            summary, raw_summary = summarize_character(character, show, season, episode)
+            options = {
+                "include_relationships": True,
+                "include_motivations": True,
+                "include_themes": True,
+                "include_quote": True,
+                "tone": "tv_expert"
+            }
+            summary, raw_summary = summarize_character(character, show, season, episode, options)
             save_character_summary_to_db(character, show, season, episode, raw_summary, summary)
             if summary:
                 from datetime import datetime
@@ -218,7 +229,14 @@ def chat_as_character_view():
 
 @main.route("/plex-webhook", methods=["POST"])
 def plex_webhook():
+    if request.method != "POST":
+        return "Method Not Allowed", 405
     try:
+        logging.info("Payload received:")
+        try:
+            logging.info(json.dumps(payload, indent=2))
+        except Exception as logging_error:
+            logging.warning(f"Failed to log payload: {logging_error}")
         if request.is_json:
             payload = request.get_json()
         else:
@@ -228,16 +246,24 @@ def plex_webhook():
                 payload = json.loads(urllib.parse.unquote_plus(payload.get('payload', '{}')))
             except Exception as decode_err:
                 logging.warning(f"Failed to decode form payload: {decode_err}")
+                return "Invalid payload format", 400
 
         if not payload or "Metadata" not in payload:
+            logging.warning("Invalid or missing Metadata in payload.")
             return "Invalid payload", 400
 
         show_title = payload["Metadata"].get("grandparentTitle") or payload["Metadata"].get("title")
-        season = payload["Metadata"].get("parentIndex")
-        episode = payload["Metadata"].get("index")
+        season = payload["Metadata"].get("parentIndex", 0)
+        episode = payload["Metadata"].get("index", 0)
 
-        if show_title:
-            # Store current watch in database
+        if not show_title:
+            logging.warning("Missing show title in metadata.")
+            return jsonify({"status": "error", "message": "Missing show title"}), 400
+
+        username = payload.get("Account", {}).get("title", "Unknown")
+        logging.info(f"✔️ Webhook: {username} is watching {show_title} S{season}E{episode}")
+
+        try:
             db = sqlite3.connect("data/shownotes.db")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS current_watch (
@@ -249,21 +275,58 @@ def plex_webhook():
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            db.execute("DELETE FROM current_watch")
-            username = payload.get("Account", {}).get("title", "Unknown")
-            db.execute("INSERT INTO current_watch (show_title, season, episode, username) VALUES (?, ?, ?, ?)",
-                       (show_title, season, episode, username))
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS webhook_log (
+                    id INTEGER PRIMARY KEY,
+                    show_title TEXT,
+                    season INTEGER,
+                    episode INTEGER,
+                    username TEXT,
+                    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            db.execute("""
+                INSERT INTO webhook_log (show_title, season, episode, username)
+                VALUES (?, ?, ?, ?)
+            """, (show_title, int(season), int(episode), username))
+
+            cursor = db.execute("""
+                SELECT COUNT(*) FROM current_watch 
+                WHERE show_title = ? AND season = ? AND episode = ? AND username = ?
+                  AND updated_at >= datetime('now', '-1 minute')
+            """, (show_title, int(season), int(episode), username))
+
+            if cursor.fetchone()[0] == 0:
+                db.execute("""
+                    INSERT INTO current_watch (show_title, season, episode, username)
+                    VALUES (?, ?, ?, ?)
+                """, (show_title, int(season), int(episode), username))
+                logging.info(f"Database updated with: {show_title} S{season}E{episode}")
+            else:
+                logging.info(f"Duplicate webhook skipped for: {show_title} S{season}E{episode}")
+
             db.commit()
             db.close()
+        except Exception as db_error:
+            logging.error(f"Failed to update current_watch: {db_error}")
+            return jsonify({"status": "error", "message": "Database update failed"}), 500
 
-            logging.info(f"Plex Webhook: Updated DB with {show_title} S{season}E{episode}")
-
-            # Auto-refresh metadata
+        # Auto-refresh metadata
+        try:
+            logging.info(f"Starting metadata population for: {show_title}")
             populate_metadata(show_title)
-        return "", 204
+            logging.info(f"Metadata populated for: {show_title}")
+        except Exception as meta_error:
+            logging.error(f"Error populating metadata for {show_title}: {meta_error}")
+            return jsonify({"status": "error", "message": f"Metadata update failed for {show_title}"}), 500
+
+        return jsonify({
+            "status": "success",
+            "message": f"Recorded watch event for {show_title} S{season}E{episode} by {username}"
+        }), 200
     except Exception as e:
         logging.error(f"Error processing Plex webhook: {e}")
-        return "Error", 500
+        return jsonify({"status": "error", "message": "Unexpected error processing webhook"}), 500
 
 @main.route("/")
 def index():
@@ -295,6 +358,24 @@ def index():
     seasons = get_season_metadata(latest_show) if latest_show else []
     top_characters = get_top_characters(latest_show) if latest_show else []
     backdrop_url = get_show_backdrop(latest_show) if latest_show else None
+    season_banner_path = None
+    if latest_show and current_season:
+        try:
+            db = sqlite3.connect("data/shownotes.db")
+            cursor = db.execute("SELECT poster_url FROM seasons WHERE title = ? AND season_number = ?", (latest_show, current_season))
+            row = cursor.fetchone()
+            db.close()
+            if row:
+                season_banner_path = row[0]
+        except Exception as e:
+            logging.warning(f"Failed to fetch season banner for {latest_show} S{current_season}: {e}")
+
+    actor_images = {}
+    for character, actor, _ in top_characters[:10]:
+        person = find_actor_by_name(latest_show, character)
+        if person and person.get("profile_path"):
+            image_url = f"https://image.tmdb.org/t/p/w185{person['profile_path']}"
+            actor_images[character] = image_url
 
     return render_template(
         "index.html",
@@ -302,7 +383,9 @@ def index():
         show_metadata=show_metadata,
         seasons=seasons,
         top_characters=top_characters,
+        actor_images=actor_images,
         backdrop_url=backdrop_url,
+        season_banner_path=season_banner_path,
         current_season=current_season,
         current_episode=current_episode,
         recent_shows=recent_shows
@@ -351,7 +434,7 @@ def populate_metadata(show_title):
     try:
         logging.info(f"Attempting to fetch metadata for show: {show_title}")
         results = search_tmdb(show_title, 'tv').get('results', [])
-        logging.info(f"TMDB search results: {results}")
+        logging.info(f"TMDB search found {len(results)} result(s) for {show_title}")
         if not results:
             logging.warning(f"No results found for {show_title}.")
             return f"No results found for {show_title}", 404
@@ -359,6 +442,7 @@ def populate_metadata(show_title):
         show = results[0]
         description = show.get('overview', 'No description available.')
         poster_url = f"https://image.tmdb.org/t/p/w500{show.get('poster_path')}" if show.get('poster_path') else None
+        logging.info(f"Poster URL for {show_title}: {poster_url}")
         logging.info(f"Selected show: {show}")
         logging.info(f"Show ID: {show.get('id')}, Description: {description}")
 
@@ -368,8 +452,16 @@ def populate_metadata(show_title):
         season_description = "Placeholder description"  # Replace with real data later
         season_poster_url = None  # Replace with real data later
         seasons = get_season_details(show.get('id'))
-        for season_number, season_description, season_poster_url in seasons:
-            save_season_metadata(show_title, season_number, season_description, season_poster_url)
+        logging.info(f"Found {len(seasons)} season(s) for {show_title}")
+        for season_data in seasons:
+            try:
+                season_number = season_data[0]
+                logging.info(f"Processing season {season_number} for {show_title}")
+                season_description = season_data[1] if len(season_data) > 1 else "No description available."
+                season_poster_url = season_data[2] if len(season_data) > 2 else None
+                save_season_metadata(show_title, season_number, season_description, season_poster_url)
+            except Exception as season_error:
+                logging.warning(f"Failed to process season data {season_data}: {season_error}")
         logging.info("Saved season metadata.")
 
         character_list = get_cast(show.get('id'), 'tv')
@@ -399,7 +491,9 @@ def show_detail(show_title):
         for character, actor, _ in top_characters:
             person = find_actor_by_name(show_title, character)
             if person and person.get("profile_path"):
-                actor_images[character] = f"https://image.tmdb.org/t/p/w300{person['profile_path']}"
+                image_url = f"https://image.tmdb.org/t/p/w300{person['profile_path']}"
+                # logging.info(f"Image URL for {character}: {image_url}")
+                actor_images[character] = image_url
         backdrop_url = get_show_backdrop(show_title)
 
         # Build a dictionary mapping season numbers to a list of (episode_number, title)
@@ -441,7 +535,7 @@ def debug_db():
     except Exception as e:
         logging.error(f"Error fetching debug DB data: {e}")
 
-    return render_template("debug_db.html", rows=rows)
+    return render_template("debug-db.html", rows=rows)
 
 @main.route('/admin/init-db')
 def init_db():
@@ -459,9 +553,191 @@ def init_db():
                 timestamp TEXT
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS shows (
+                id INTEGER PRIMARY KEY,
+                tmdb_id INTEGER,
+                title TEXT,
+                description TEXT,
+                poster_url TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS seasons (
+                id INTEGER PRIMARY KEY,
+                title TEXT,
+                season_number INTEGER,
+                description TEXT,
+                poster_url TEXT
+            )
+        """)
         db.commit()
         db.close()
-        return "api_usage table initialized.", 200
+        return "api_usage, shows, and seasons tables initialized.", 200
     except Exception as e:
-        logging.error(f"Failed to initialize API usage table: {e}")
+        logging.error(f"Failed to initialize database tables: {e}")
         return "Database initialization failed.", 500
+
+@main.route("/admin/refresh-show")
+def refresh_show_metadata():
+    latest_show = get_latest_show_title_from_db()
+    if not latest_show:
+        return "No recent show found.", 400
+
+    try:
+        populate_metadata(latest_show)
+        return f"Metadata refreshed for: {latest_show}", 200
+    except Exception as e:
+        return f"Error: {e}", 500
+
+@main.route('/admin/recreate-current-watch')
+def recreate_current_watch():
+    try:
+        db = sqlite3.connect("data/shownotes.db")
+        db.execute("DROP TABLE IF EXISTS current_watch")
+        db.execute("""
+            CREATE TABLE current_watch (
+                id INTEGER PRIMARY KEY,
+                show_title TEXT NOT NULL,
+                season INTEGER,
+                episode INTEGER,
+                username TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        db.commit()
+        db.close()
+        return "current_watch table recreated.", 200
+    except Exception as e:
+        return f"Error recreating table: {e}", 500
+
+@main.route("/admin/test-webhook")
+def test_webhook():
+    import requests
+    import json
+    test_payload = {
+        "Metadata": {
+            "grandparentTitle": "For All Mankind",
+            "parentIndex": 3,
+            "index": 7
+        },
+        "Account": {
+            "title": "testuser"
+        }
+    }
+    try:
+        headers = {"Content-Type": "application/json"}
+        resp = requests.post("http://127.0.0.1:5002/plex-webhook", headers=headers, json=test_payload)
+        status_code = resp.status_code
+        response_text = resp.text
+        formatted_payload = json.dumps(test_payload, indent=2)
+        return f"""
+              <h2>Webhook Test Sent</h2>
+              <p><strong>Status Code:</strong> {status_code}</p>
+              <h3>Sent Payload:</h3>
+              <pre>{formatted_payload}</pre>
+              <h3>Webhook Response:</h3>
+              <pre>{response_text}</pre>
+          """, 200
+    except Exception as e:
+        return f"<h2>Webhook Test Failed</h2><pre>{e}</pre>", 500
+
+@main.route('/admin/test-character-summary')
+def test_character_summary():
+    from app.utils import summarize_character
+
+    character = "Ellie Williams"
+    show = "The Last of Us"
+    season = 1
+    episode = 3
+    options = {
+        "include_relationships": True,
+        "include_motivations": True,
+        "include_themes": True,
+        "include_quote": True,
+        "tone": "tv_expert"
+    }
+
+    parsed, raw = summarize_character(character, show, season, episode, options)
+    return f"<h2>Summary for {character} from {show} (S{season}E{episode})</h2><pre>{raw}</pre>"
+
+@main.route('/admin/autocomplete-log')
+def admin_autocomplete_log():
+    logs = []
+    try:
+        db = sqlite3.connect("data/shownotes.db")
+        cursor = db.execute("""
+            SELECT term, type, timestamp
+            FROM autocomplete_logs
+            ORDER BY timestamp DESC
+            LIMIT 100
+        """)
+        logs = cursor.fetchall()
+        db.close()
+    except Exception as e:
+        logging.error(f"Error fetching autocomplete log data: {e}")
+    return render_template("admin_autocomplete_log.html", logs=logs)
+
+@main.route('/admin/webhook-log')
+def admin_webhook_log():
+    logs = []
+    try:
+        db = sqlite3.connect("data/shownotes.db")
+        cursor = db.execute("""
+            SELECT show_title, season, episode, username, received_at
+            FROM webhook_log
+            ORDER BY received_at DESC
+            LIMIT 100
+        """)
+        logs = cursor.fetchall()
+        db.close()
+    except Exception as e:
+        logging.error(f"Error fetching webhook log data: {e}")
+    return render_template("admin_webhook_log.html", logs=logs)
+
+@main.route('/log-autocomplete-selection', methods=['POST'])
+def log_autocomplete_selection():
+    data = request.get_json()
+    term = data.get('term')
+    field_type = data.get('type')  # 'show' or 'character'
+    timestamp = datetime.utcnow().isoformat()
+
+    try:
+        db = sqlite3.connect("data/shownotes.db")
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS autocomplete_logs (
+                id INTEGER PRIMARY KEY,
+                term TEXT,
+                type TEXT,
+                timestamp TEXT
+            )
+        """)
+        db.execute("""
+            INSERT INTO autocomplete_logs (term, type, timestamp)
+            VALUES (?, ?, ?)
+        """, (term, field_type, timestamp))
+        db.commit()
+        db.close()
+        return '', 204
+    except Exception as e:
+        logging.error(f"Failed to log autocomplete selection: {e}")
+        return 'Error', 500
+@main.route('/calendar/full')
+def calendar_full_data():
+    try:
+        data = fetch_sonarr_calendar(days=7)
+        events = []
+
+        for show in data:
+            events.append({
+                "title": f"{show['series']['title']} - S{show['seasonNumber']}E{show['episodeNumber']}",
+                "start": show['airDateUtc'],
+                "end": show['airDateUtc'],  # optional; could estimate with runtime if needed
+                "description": show.get('overview', '')
+            })
+
+        return jsonify(events)
+
+    except Exception as e:
+        logging.exception("Error generating FullCalendar event data")
+        return jsonify({"error": str(e)}), 500

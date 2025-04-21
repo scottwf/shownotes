@@ -41,6 +41,48 @@
 
           <p class="text-muted small mt-3">Source: {{ source | capitalize }}</p>
         </div>
+        <div class="accordion my-4" id="insightAccordion">
+      
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="headingMotivation">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMotivation" aria-expanded="false" aria-controls="collapseMotivation">
+                Motivations and Inner Conflict
+              </button>
+            </h2>
+            <div id="collapseMotivation" class="accordion-collapse collapse" aria-labelledby="headingMotivation" data-bs-parent="#insightAccordion">
+              <div class="accordion-body" id="insight-motivation">
+                <em>Click to load insight...</em>
+              </div>
+            </div>
+          </div>
+      
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="headingThemes">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThemes" aria-expanded="false" aria-controls="collapseThemes">
+                Themes and Symbolism
+              </button>
+            </h2>
+            <div id="collapseThemes" class="accordion-collapse collapse" aria-labelledby="headingThemes" data-bs-parent="#insightAccordion">
+              <div class="accordion-body" id="insight-themes">
+                <em>Click to load insight...</em>
+              </div>
+            </div>
+          </div>
+      
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="headingQuote">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseQuote" aria-expanded="false" aria-controls="collapseQuote">
+                Notable Quote
+              </button>
+            </h2>
+            <div id="collapseQuote" class="accordion-collapse collapse" aria-labelledby="headingQuote" data-bs-parent="#insightAccordion">
+              <div class="accordion-body" id="insight-quote">
+                <em>Click to load insight...</em>
+              </div>
+            </div>
+          </div>
+      
+        </div>
       </div>
     </div>
 
@@ -108,11 +150,45 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/autocomplete.js') }}?v=5"></script>
 <script>
-  {% if not summary %}
-    setupAutocomplete(document.getElementById("show"), "shows");
-    setupAutocomplete(document.getElementById("character"), "characters", document.getElementById("show"));
-  {% endif %}
+  document.addEventListener('DOMContentLoaded', function () {
+    if (document.querySelector('#show')) {
+      new TomSelect('#show', {
+        valueField: 'name',
+        labelField: 'name',
+        searchField: 'name',
+        load: function(query, callback) {
+          if (!query.length) return callback();
+          fetch(`/autocomplete/shows?q=${encodeURIComponent(query)}`)
+            .then(response => response.json())
+            .then(callback)
+            .catch(() => callback());
+        },
+        create: false,
+        placeholder: 'Start typing a show title...',
+        preload: true
+      });
+    }
+
+    if (document.querySelector('#character')) {
+      const showInput = document.querySelector('#show');
+      new TomSelect('#character', {
+        valueField: 'name',
+        labelField: 'name',
+        searchField: 'name',
+        load: function(query, callback) {
+          const showTitle = showInput.value;
+          if (!query.length || !showTitle) return callback();
+          fetch(`/autocomplete/characters?show=${encodeURIComponent(showTitle)}&q=${encodeURIComponent(query)}`)
+            .then(response => response.json())
+            .then(callback)
+            .catch(() => callback());
+        },
+        create: false,
+        placeholder: 'Start typing a character name...',
+        preload: true
+      });
+    }
+  });
 </script>
 {% endblock %}

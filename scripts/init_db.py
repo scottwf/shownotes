@@ -90,6 +90,19 @@ CREATE TABLE IF NOT EXISTS top_characters (
 )
 ''')
 
+# Table: Shows (for show ID lookups and metadata)
+c.execute('''
+CREATE TABLE IF NOT EXISTS shows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    show_id INTEGER,
+    title TEXT UNIQUE,
+    overview TEXT,
+    poster_path TEXT,
+    backdrop_path TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+''')
+
 conn.commit()
 conn.close()
 print("✅ Database initialized.")

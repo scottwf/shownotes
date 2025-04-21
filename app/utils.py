@@ -6,6 +6,7 @@ import re
 import json
 import logging
 from openai import OpenAI
+from app.prompt_builder import build_character_prompt
 
 load_dotenv()
 
@@ -16,7 +17,17 @@ def search_tmdb(query, media_type='tv'):
     url = f"https://api.themoviedb.org/3/search/{media_type}"
     params = {"api_key": TMDB_API_KEY, "query": query}
     response = requests.get(url, params=params)
-    return response.json()
+    data = response.json()
+    if "results" in data:
+        for result in data["results"]:
+            poster = result.get("poster_path")
+            if not poster:
+                result["poster_path"] = "/default.jpg"
+            elif isinstance(poster, int):
+                result["poster_path"] = "/default.jpg"
+            elif isinstance(poster, str) and not poster.startswith("/"):
+                result["poster_path"] = "/" + poster
+    return data
 
 def find_actor_by_name(show, character):
     results_tv = search_tmdb(show, 'tv').get('results', [])
@@ -127,18 +138,8 @@ def chat_as_character(character, show_title, user_message):
     except Exception as e:
         return f"Error generating reply: {e}"
 
-def get_character_summary(character, show_title, season, episode):
-    prompt = f"""
-    Summarize the character "{character}" from the show "{show_title}" based only on events up to Season {season}, Episode {episode}.
-
-    Use the following sections and headings **exactly as shown** (with a colon and no extra text):
-
-    - Notable Quote:
-    - Personality & Traits:
-    - Key Events:
-    - Relationships:
-    - Importance to the Story:
-    """
+def get_character_summary(character, show_title, season, episode, options=None):
+    prompt = build_character_prompt(character, show_title, season, episode, options)
     response = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}]
@@ -234,13 +235,30 @@ def get_cached_summary(character, show_title, season, episode):
         }, raw
     return None, None
         
-def summarize_character(character, show_title, season, episode):
+def summarize_character(character, show_title, season, episode, options=None):
     """
     Generates and parses a character summary based on viewing limits.
     Returns a tuple: (parsed_summary_dict, raw_summary_text)
     """
-    raw_summary = get_character_summary(character, show_title, season, episode)
+    raw_summary = get_character_summary(character, show_title, season, episode, options)
     parsed = parse_character_summary(raw_summary)
+
+    # Estimate token usage (approx. 4 characters per token)
+    tokens = len(raw_summary) // 4
+    model = "gpt-4"
+    cost_per_1k = 0.06  # GPT-4 input cost per 1K tokens
+    cost = round((tokens / 1000) * cost_per_1k, 4)
+
+    # Log to api_usage table
+    conn = sqlite3.connect("data/shownotes.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO api_usage (character, show, prompt_tokens, completion_tokens, total_tokens, cost, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    """, (character, show_title, tokens, 0, tokens, cost))
+    conn.commit()
+    conn.close()
+
     return parsed, raw_summary
 
 def get_all_characters_for_show(show_title, limit=10):
@@ -352,12 +370,56 @@ def save_show_metadata(show_id, show_title, description, poster_url):
     """
     Save show-level metadata to the database.
     """
+    # Ensure poster_url is a valid string with a leading slash
+    if not poster_url or isinstance(poster_url, int):
+        poster_url = "/default.jpg"
+    elif isinstance(poster_url, str) and not poster_url.startswith("/"):
+        poster_url = "/" + poster_url
+
     conn = sqlite3.connect("data/shownotes.db")
     cursor = conn.cursor()
     cursor.execute("""
         INSERT OR REPLACE INTO show_metadata (show_id, show_title, description, poster_url)
         VALUES (?, ?, ?, ?)
     """, (show_id, show_title, description, poster_url))
+    # Also save to the shows table for season lookup
+    try:
+        # Attempt to fetch backdrop_path from TMDB details
+        details_url = f"https://api.themoviedb.org/3/tv/{show_id}"
+        details_resp = requests.get(details_url, params={"api_key": TMDB_API_KEY})
+        backdrop_path = None
+        if details_resp.status_code == 200:
+            show_data = details_resp.json()
+            backdrop_path = show_data.get("backdrop_path")
+            if backdrop_path and not backdrop_path.startswith("/"):
+                backdrop_path = "/" + backdrop_path
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO shows (show_id, title, overview, poster_path, backdrop_path)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            show_id,
+            show_title,
+            description,
+            poster_url,
+            backdrop_path
+        ))
+    except Exception as e:
+        logging.warning(f"Failed to insert into shows table for {show_title}: {e}")
+
+    # Save season metadata
+    try:
+        seasons = get_season_details(show_id)
+        for season in seasons:
+            season_number, description, poster_url = season
+            cursor.execute("""
+                INSERT OR REPLACE INTO season_metadata (
+                    show_title, season_number, season_description, season_poster_url
+                ) VALUES (?, ?, ?, ?)
+            """, (show_title, season_number, description, poster_url))
+    except Exception as e:
+        logging.warning(f"Failed to insert season metadata for {show_title}: {e}")
+
     conn.commit()
     conn.close()
 
@@ -417,7 +479,9 @@ def save_top_characters(show_title, character_list):
     cursor = conn.cursor()
     for character in character_list:
         if len(character) >= 3:
-            name, actor, count = character[:3]
+            name = character.get("character", "")
+            actor = character.get("name", "")
+            count = character.get("episode_count", 0)
             cursor.execute("""
                 INSERT OR REPLACE INTO top_characters (show_title, character_name, actor_name, episode_count)
                 VALUES (?, ?, ?, ?)
