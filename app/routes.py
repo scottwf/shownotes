@@ -1,4 +1,32 @@
+# --------------------------------------------------------------------
+# ROUTE INDEX
+# --------------------------------------------------------------------
+# /                             → index (dashboard for current watch)
+# /show/<title>/progress/<SxxExx> → detailed show page
+# /character-summary            → summary page for character (GET/POST)
+# /chat-as-character           → chat as character interface
+# /compare                     → compare two shows by overlapping actors
+# /autocomplete/shows          → show autocomplete (AJAX)
+# /autocomplete/characters     → character autocomplete (AJAX)
+# /plex-webhook                → ingest now-watching webhook from Plex
+# /populate-metadata/<title>   → fetch and save show metadata
+# /admin/init-db               → create necessary tables
+# /admin/summaries/            → view stored character summaries
+# /admin/api-usage             → view OpenAI usage dashboard
+# /admin/test-webhook          → simulate webhook input
+# /admin/test-character-summary → test summary generation
+# /admin/test-character-quotes → test character quote prompt
+# /admin/test-character-relationships → test relationship prompt
+# /admin/refresh-show          → refresh latest show metadata
+# /admin/recreate-current-watch → reset now-watching table
+# /admin/autocomplete-log      → view logged autocomplete entries
+# /admin/webhook-log           → view webhook events
+# /calendar/full               → return Sonarr calendar events (JSON)
+# /log-autocomplete-selection  → store user autocomplete choice (POST)
+# --------------------------------------------------------------------
+
 from flask import Blueprint, render_template, request, jsonify
+from urllib.parse import unquote_plus, quote_plus
 from markupsafe import Markup
 import os
 import sqlite3
@@ -19,11 +47,13 @@ from app.utils import (
     save_season_metadata,
     save_top_characters,
     get_latest_show_title_from_db,
-    get_cached_summary, 
-    summarize_character
+    get_cached_summary,
+    summarize_character,
+    save_character_summary_to_db,
+    find_actor_by_name,
+    get_all_characters_for_show,
 )
-from app.prompt_builder import build_character_prompt
-from app.utils import find_actor_by_name
+from app.prompt_builder import build_character_prompt, build_quote_prompt, build_relationships_prompt
 
 main = Blueprint('main', __name__)
 logging.basicConfig(level=logging.INFO)
@@ -145,12 +175,20 @@ def character_summary():
     source = None
     other_characters = []
 
-    if request.method == 'POST':
-        show = request.form.get("show")
-        character = request.form.get("character", "").split('(')[0].strip()
+    # Handle GET or POST parameters with URL decoding and normalization
+    if request.method == 'GET':
+        character = unquote_plus(request.args.get("character", "").split('(')[0].strip())
+        show = unquote_plus(request.args.get("show", ""))
+        season = request.args.get("season", type=int) or 1
+        episode = request.args.get("episode", type=int) or 1
+    elif request.method == 'POST':
+        character = unquote_plus(request.form.get("character", "").split('(')[0].strip())
+        show = unquote_plus(request.form.get("show", ""))
         season = request.form.get("season", type=int) or 1
         episode = request.form.get("episode", type=int) or 1
 
+    # Only proceed if show and character are provided
+    if show and character:
         summary, raw_summary = get_cached_summary(character, show, season, episode)
         source = "cache" if summary else "generated"
 
@@ -175,9 +213,9 @@ def character_summary():
                 try:
                     db = sqlite3.connect("data/shownotes.db")
                     db.execute("""
-                        INSERT INTO api_usage (character, show, prompt_tokens, completion_tokens, total_tokens, cost, timestamp)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (character, show, prompt_tokens, completion_tokens, total_tokens, cost, datetime.utcnow().isoformat()))
+                        INSERT INTO api_usage (character, show, season, episode, prompt_tokens, completion_tokens, total_tokens, cost, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (character, show, season, episode, prompt_tokens, completion_tokens, total_tokens, cost, datetime.utcnow().isoformat()))
                     db.commit()
                     db.close()
                 except Exception as log_error:
@@ -189,17 +227,20 @@ def character_summary():
 
         other_characters = get_all_characters_for_show(show)
 
-    return render_template("character_summary.html",
-                           character=character,
-                           show=show,
-                           season=season,
-                           episode=episode,
-                           summary=summary,
-                           image_url=image_url,
-                           raw_summary=raw_summary,
-                           source=source,
-                           other_characters=other_characters,
-                           reference_links=reference_links)
+    rendered = render_template("character_summary.html",
+                               character=quote_plus(character),
+                               show=quote_plus(show),
+                               season=season,
+                               episode=episode,
+                               summary=summary,
+                               image_url=image_url,
+                               raw_summary=raw_summary,
+                               source=source,
+                               other_characters=other_characters,
+                               reference_links=reference_links,
+                               actor_name=actor["name"] if actor else None)
+    logging.info(f"Rendering character summary for {character} from {show} S{season}E{episode}")
+    return rendered
 
 @main.route('/chat-as-character', methods=["GET", "POST"])
 def chat_as_character_view():
@@ -233,10 +274,8 @@ def plex_webhook():
         return "Method Not Allowed", 405
     try:
         logging.info("Payload received:")
-        try:
-            logging.info(json.dumps(payload, indent=2))
-        except Exception as logging_error:
-            logging.warning(f"Failed to log payload: {logging_error}")
+        # Ensure payload is defined before logging
+        payload = None
         if request.is_json:
             payload = request.get_json()
         else:
@@ -247,6 +286,10 @@ def plex_webhook():
             except Exception as decode_err:
                 logging.warning(f"Failed to decode form payload: {decode_err}")
                 return "Invalid payload format", 400
+        try:
+            logging.info(json.dumps(payload, indent=2))
+        except Exception as logging_error:
+            logging.warning(f"Failed to log payload: {logging_error}")
 
         if not payload or "Metadata" not in payload:
             logging.warning("Invalid or missing Metadata in payload.")
@@ -296,14 +339,18 @@ def plex_webhook():
                   AND updated_at >= datetime('now', '-1 minute')
             """, (show_title, int(season), int(episode), username))
 
-            if cursor.fetchone()[0] == 0:
-                db.execute("""
-                    INSERT INTO current_watch (show_title, season, episode, username)
-                    VALUES (?, ?, ?, ?)
-                """, (show_title, int(season), int(episode), username))
-                logging.info(f"Database updated with: {show_title} S{season}E{episode}")
+            # Only update current_watch if username == "woodsfehr"
+            if username == "woodsfehr":
+                if cursor.fetchone()[0] == 0:
+                    db.execute("""
+                        INSERT INTO current_watch (show_title, season, episode, username)
+                        VALUES (?, ?, ?, ?)
+                    """, (show_title, int(season), int(episode), username))
+                    logging.info(f"✔️ Updated current_watch for {username}: {show_title} S{season}E{episode}")
+                else:
+                    logging.info(f"⏭️ Duplicate webhook skipped for: {show_title} S{season}E{episode}")
             else:
-                logging.info(f"Duplicate webhook skipped for: {show_title} S{season}E{episode}")
+                logging.info(f"🛑 Ignoring update from non-primary user: {username}")
 
             db.commit()
             db.close()
@@ -337,7 +384,7 @@ def index():
 
     try:
         db = sqlite3.connect("data/shownotes.db")
-        cursor = db.execute("SELECT show_title, season, episode FROM current_watch ORDER BY updated_at DESC LIMIT 1")
+        cursor = db.execute("SELECT show_title, season, episode FROM current_watch WHERE username = 'woodsfehr' ORDER BY updated_at DESC LIMIT 1")
         row = cursor.fetchone()
 
         if row:
@@ -357,6 +404,14 @@ def index():
     show_metadata = get_show_metadata(latest_show) if latest_show else None
     seasons = get_season_metadata(latest_show) if latest_show else []
     top_characters = get_top_characters(latest_show) if latest_show else []
+    seen = set()
+    unique_characters = []
+    for c in top_characters:
+        key = (c[0], c[1])  # (character, actor)
+        if key not in seen:
+            seen.add(key)
+            unique_characters.append(c)
+    top_characters = unique_characters
     backdrop_url = get_show_backdrop(latest_show) if latest_show else None
     season_banner_path = None
     if latest_show and current_season:
@@ -365,8 +420,10 @@ def index():
             cursor = db.execute("SELECT poster_url FROM seasons WHERE title = ? AND season_number = ?", (latest_show, current_season))
             row = cursor.fetchone()
             db.close()
-            if row:
+            if row and row[0]:
                 season_banner_path = row[0]
+            elif show_metadata and len(show_metadata) > 1 and show_metadata[1]:
+                season_banner_path = show_metadata[1]  # fallback to show poster
         except Exception as e:
             logging.warning(f"Failed to fetch season banner for {latest_show} S{current_season}: {e}")
 
@@ -414,20 +471,40 @@ def admin_summaries():
 @main.route('/admin/api-usage')
 def admin_api_usage():
     usage_records = []
+    total_calls = 0
+    total_cost = 0.0
+    cost_per_model = {}
+
     try:
         db = sqlite3.connect("data/shownotes.db")
-        cursor = db.execute("""
-            SELECT character, show, prompt_tokens, completion_tokens, total_tokens, cost, timestamp
+        cursor = db.cursor()
+
+        cursor.execute("""
+            SELECT character, show, season, episode, prompt_tokens, completion_tokens, total_tokens, cost, timestamp
             FROM api_usage
             ORDER BY timestamp DESC
             LIMIT 100
         """)
         usage_records = cursor.fetchall()
+
+        # Totals
+        cursor.execute("SELECT COUNT(*), SUM(cost) FROM api_usage")
+        total_calls, total_cost = cursor.fetchone()
+
+        # Per-model cost summary (skip if model column not present)
+        # cursor.execute("SELECT model, COUNT(*), SUM(cost) FROM api_usage GROUP BY model")
+        # for model, count, cost in cursor.fetchall():
+        #     cost_per_model[model] = {"count": count, "cost": cost}
+
         db.close()
     except Exception as e:
         logging.error(f"Error fetching API usage data: {e}")
 
-    return render_template("api_usage.html", usage_records=usage_records)
+    return render_template("api_usage.html",
+                           usage_records=usage_records,
+                           total_calls=total_calls,
+                           total_cost=total_cost,
+                           cost_per_model=cost_per_model)
 
 @main.route('/populate-metadata/<show_title>')
 def populate_metadata(show_title):
@@ -474,10 +551,14 @@ def populate_metadata(show_title):
         traceback.print_exc()
         return f"Failed to save metadata for {show_title}", 500
 
-@main.route('/show/<show_title>')
-def show_detail(show_title):
+@main.route('/show/<show_title>/progress/<season_episode_limit>')
+def show_detail(show_title, season_episode_limit):
     try:
+        show_title = unquote_plus(show_title)
         show_metadata = get_show_metadata(show_title)
+        # Fallback for missing or incomplete show_metadata
+        if not show_metadata or len(show_metadata) < 3:
+            show_metadata = (show_title, None, "No description available.")
         seasons = get_season_metadata(show_title)
         # Count episodes per season accurately
         season_counts = {}
@@ -485,6 +566,16 @@ def show_detail(show_title):
             if len(row) >= 4:
                 season_num = row[0]
                 season_counts[season_num] = season_counts.get(season_num, 0) + 1
+
+        # Build season_airdates dictionary
+        season_airdates = {}
+        for row in get_season_metadata(show_title):
+            if len(row) >= 6:
+                season_num = row[0]
+                air_start = row[4]
+                air_end = row[5]
+                season_airdates[season_num] = (air_start, air_end)
+
         top_characters = get_top_characters(show_title)
         # Build actor image dictionary
         actor_images = {}
@@ -496,12 +587,13 @@ def show_detail(show_title):
                 actor_images[character] = image_url
         backdrop_url = get_show_backdrop(show_title)
 
-        # Build a dictionary mapping season numbers to a list of (episode_number, title)
+        # Build a dictionary mapping season numbers to a list of (episode_number, title, episode_url)
         season_episodes = {}
         for row in get_season_metadata(show_title):
             if len(row) >= 5:
                 season_num, _, _, ep_num, ep_title = row
-                season_episodes.setdefault(season_num, []).append((ep_num, ep_title))
+                episode_url = f"/{quote_plus(show_title)}/S{season_num:02d}/E{ep_num:02d}"
+                season_episodes.setdefault(season_num, []).append((ep_num, ep_title, episode_url))
 
         logging.info(f"Top characters for {show_title}: {top_characters}")
         return render_template(
@@ -513,11 +605,146 @@ def show_detail(show_title):
             backdrop_url=backdrop_url,
             season_episodes=season_episodes,
             season_counts=season_counts,
-            actor_images=actor_images
+            actor_images=actor_images,
+            season_episode_limit=season_episode_limit,
+            season_airdates=season_airdates
         )
     except Exception as e:
         logging.error(f"Failed to load show page for {show_title}: {e}")
-        return f"Unable to load details for {show_title}", 500
+        logging.error(traceback.format_exc())
+        return f"Unable to load details for {show_title}: {e}", 500
+
+
+
+# --------------------------------------------------------------------
+# Season summary route: /<show_title>/S<season_number>
+# --------------------------------------------------------------------
+@main.route('/<show_title>/S<season_number>')
+def season_summary(show_title, season_number):
+    try:
+        show_title = unquote_plus(show_title)
+        season_number = int(season_number)
+
+        show_metadata = get_show_metadata(show_title)
+        if not show_metadata or len(show_metadata) < 3:
+            show_metadata = (show_title, None, "No description available.")
+
+        seasons = get_season_metadata(show_title)
+        season_info = [s for s in seasons if s[0] == season_number]
+
+        episodes = []
+        for row in get_season_metadata(show_title):
+            if len(row) >= 5 and row[0] == season_number:
+                _, _, _, ep_num, ep_title = row
+                episodes.append((ep_num, ep_title))
+
+        poster_url = None
+        if season_info and len(season_info[0]) > 2:
+            poster_url = season_info[0][2]
+
+        return render_template("season_summary.html",
+                               show_title=show_title,
+                               season_number=season_number,
+                               description=season_info[0][1] if season_info else "No description available.",
+                               poster_url=poster_url,
+                               episodes=episodes)
+    except Exception as e:
+        logging.error(f"Failed to load season summary for {show_title} S{season_number}: {e}")
+        logging.error(traceback.format_exc())
+        return f"Unable to load season summary for {show_title} S{season_number}", 500
+
+
+# --------------------------------------------------------------------
+# Character summary route: /<show_title>/cast/<character_name>
+# --------------------------------------------------------------------
+
+@main.route('/<show_title>/cast/<character_name>')
+def character_summary_clean(show_title, character_name):
+    try:
+        show_title = unquote_plus(show_title)
+        character_name = unquote_plus(character_name)
+
+        # Assume default viewing limit if not tracked via session or param
+        season = 1
+        episode = 1
+
+        summary, raw_summary = get_cached_summary(character_name, show_title, season, episode)
+        if not summary:
+            options = {
+                "include_relationships": True,
+                "include_motivations": True,
+                "include_themes": True,
+                "include_quote": True,
+                "tone": "tv_expert"
+            }
+            summary, raw_summary = summarize_character(character_name, show_title, season, episode, options)
+            save_character_summary_to_db(character_name, show_title, season, episode, raw_summary, summary)
+
+        actor = find_actor_by_name(show_title, character_name)
+        image_url = f"https://image.tmdb.org/t/p/w185{actor['profile_path']}" if actor and actor.get("profile_path") else None
+
+        other_characters = get_all_characters_for_show(show_title)
+
+        return render_template("character_summary.html",
+                               character=quote_plus(character_name),
+                               show=quote_plus(show_title),
+                               season=season,
+                               episode=episode,
+                               summary=summary,
+                               image_url=image_url,
+                               raw_summary=raw_summary,
+                               source="generated",
+                               other_characters=other_characters,
+                               reference_links=None,
+                               actor_name=actor["name"] if actor else None)
+    except Exception as e:
+        logging.error(f"Failed to load character summary for {character_name} in {show_title}: {e}")
+        logging.error(traceback.format_exc())
+        return f"Unable to load character summary for {character_name} in {show_title}", 500
+
+
+# --------------------------------------------------------------------
+# Character summary with progress route: /<show_title>/cast/<character_name>/progress/s<season>e<episode>
+# --------------------------------------------------------------------
+@main.route('/<show_title>/cast/<character_name>/progress/s<int:season>e<int:episode>')
+def character_summary_with_progress(show_title, character_name, season, episode):
+    try:
+        show_title = unquote_plus(show_title)
+        character_name = unquote_plus(character_name)
+
+        summary, raw_summary = get_cached_summary(character_name, show_title, season, episode)
+        if not summary:
+            options = {
+                "include_relationships": True,
+                "include_motivations": True,
+                "include_themes": True,
+                "include_quote": True,
+                "tone": "tv_expert"
+            }
+            summary, raw_summary = summarize_character(character_name, show_title, season, episode, options)
+            save_character_summary_to_db(character_name, show_title, season, episode, raw_summary, summary)
+
+        actor = find_actor_by_name(show_title, character_name)
+        image_url = f"https://image.tmdb.org/t/p/w185{actor['profile_path']}" if actor and actor.get("profile_path") else None
+
+        other_characters = get_all_characters_for_show(show_title)
+
+        return render_template("character_summary.html",
+                               character=quote_plus(character_name),
+                               show=quote_plus(show_title),
+                               season=season,
+                               episode=episode,
+                               summary=summary,
+                               image_url=image_url,
+                               raw_summary=raw_summary,
+                               source="generated",
+                               other_characters=other_characters,
+                               reference_links=None,
+                               actor_name=actor["name"] if actor else None)
+    except Exception as e:
+        logging.error(f"Failed to load character summary for {character_name} in {show_title} S{season}E{episode}: {e}")
+        logging.error(traceback.format_exc())
+        return f"Unable to load character summary for {character_name} in {show_title} S{season}E{episode}", 500
 
 @main.route('/debug-db')
 def debug_db():
@@ -546,6 +773,8 @@ def init_db():
                 id INTEGER PRIMARY KEY,
                 character TEXT,
                 show TEXT,
+                season INTEGER,
+                episode INTEGER,
                 prompt_tokens INTEGER,
                 completion_tokens INTEGER,
                 total_tokens INTEGER,
@@ -660,6 +889,30 @@ def test_character_summary():
 
     parsed, raw = summarize_character(character, show, season, episode, options)
     return f"<h2>Summary for {character} from {show} (S{season}E{episode})</h2><pre>{raw}</pre>"
+
+
+# New routes to test character quotes and relationships
+@main.route('/admin/test-character-quotes')
+def test_character_quotes():
+    from app.utils import get_openai_response
+    character = "Ed Baldwin"
+    show = "For All Mankind"
+    season = 3
+    episode = 5
+    prompt = build_quote_prompt(character, show, season, episode)
+    response = get_openai_response(prompt)
+    return f"<h2>Quotes for {character}</h2><pre>{response}</pre>"
+
+@main.route('/admin/test-character-relationships')
+def test_character_relationships():
+    from app.utils import get_openai_response
+    character = "Ed Baldwin"
+    show = "For All Mankind"
+    season = 3
+    episode = 5
+    prompt = build_relationships_prompt(character, show, season, episode)
+    response = get_openai_response(prompt)
+    return f"<h2>Relationships for {character}</h2><pre>{response}</pre>"
 
 @main.route('/admin/autocomplete-log')
 def admin_autocomplete_log():

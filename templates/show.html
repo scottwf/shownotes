@@ -4,10 +4,15 @@
 {% block content %}
 
 {% if backdrop_url %}
-<div class="show-header" style="background-image: url('{{ backdrop_url }}');">
-  <div class="overlay">
-    <h1>{{ latest_show }}</h1>
-    <p>{{ show_metadata[2] }}</p>  <!-- Description -->
+<div class="show-header position-relative text-white" style="background-image: url('{{ backdrop_url }}'); background-size: cover; background-position: center; padding: 80px 20px;">
+  <div class="bg-dark bg-opacity-75 p-4 rounded" style="max-width: 800px;">
+    <h1 class="display-4">{{ latest_show }}</h1>
+    <p class="lead">{{ show_metadata[2] }}</p>
+    <div class="mt-3">
+      <a href="https://www.imdb.com/find?q={{ latest_show | replace(' ', '+') }}" target="_blank" class="btn btn-sm btn-outline-light me-2">IMDB</a>
+      <a href="https://www.themoviedb.org/search?query={{ latest_show | replace(' ', '+') }}" target="_blank" class="btn btn-sm btn-outline-light me-2">TMDB</a>
+      <a href="https://fandom.com/?s={{ latest_show | replace(' ', '+') }}" target="_blank" class="btn btn-sm btn-outline-light">Fandom</a>
+    </div>
   </div>
 </div>
 {% endif %}
@@ -21,16 +26,43 @@
       {% for number, description, poster in seasons %}
         {% if number not in seen_seasons %}
           {% set _ = seen_seasons.append(number) %}
-          <div class="col-md-4">
-            <div class="card h-100 shadow-sm" style="transition: transform 0.3s;">
+          <div class="col-12 col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm text-center">
               {% if poster %}
-                <a href="/season-summary?show={{ latest_show | urlencode }}&season={{ number }}">
-                  <img src="{{ poster }}" class="card-img-top" alt="Season {{ number }} poster" style="max-height: 300px; object-fit: cover;">
+                <a href="/{{ latest_show | replace(' ', '+') }}/S{{ '%02d'|format(number) }}">
+                  <img src="{{ poster }}" class="card-img-top" style="height: 300px; object-fit: cover;" alt="Season {{ number }} poster">
                 </a>
               {% endif %}
-              <div class="card-body text-center">
+              <div class="card-body">
                 <h5 class="card-title">Season {{ number }}</h5>
-                <p class="card-text">{{ description }}</p>
+                {% if season_airdates and season_airdates.get(number) %}
+                  {% set start_date, end_date = season_airdates.get(number) %}
+                  <p class="mb-2 small text-muted">
+                    {{ start_date }}{% if end_date %} – {{ end_date }}{% else %} – {% endif %}
+                  </p>
+                {% endif %}
+                <p class="card-text" style="font-size: 1.5rem;">{{ description }}</p>
+                <div class="d-flex justify-content-center align-items-center gap-2 mt-3">
+                  {% if season_counts.get(number) %}
+                    <span class="badge bg-secondary">{{ season_counts[number] }} Episodes</span>
+                  {% endif %}
+                  <a href="/{{ latest_show | replace(' ', '+') }}/S{{ '%02d'|format(number) }}" class="btn btn-sm btn-outline-primary">View Summary</a>
+                </div>
+                {% set current_season = season_episode_limit[1:3]|int %}
+                {% set current_episode = season_episode_limit[4:6]|int %}
+                {% if number < current_season %}
+                  <div class="progress mt-3" style="height: 10px;">
+                    <div class="progress-bar bg-success" style="width: 100%;"></div>
+                  </div>
+                  <small class="text-muted">Completed</small>
+                {% elif number == current_season and season_counts.get(number) %}
+                  {% set episode_count = season_counts[number] %}
+                  {% set progress_percent = (current_episode / episode_count * 100) | round(0, 'floor') %}
+                  <div class="progress mt-3" style="height: 10px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ progress_percent }}%;" aria-valuenow="{{ progress_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+                  </div>
+                  <small class="text-muted">Episode {{ current_episode }} of {{ episode_count }}</small>
+                {% endif %}
               </div>
             </div>
           </div>
@@ -52,7 +84,7 @@
             <div class="card-body">
               <h5 class="card-title">{{ character }}</h5>
               <p class="card-text text-muted">Played by {{ actor }}<br>{{ count }} episodes</p>
-              <a href="/character-summary?show_title={{ latest_show | urlencode }}&character_name={{ character | urlencode }}&season_limit={{ seasons | length }}" class="btn btn-outline-primary btn-sm">Generate Summary</a>
+              <a href="/{{ latest_show | replace(' ', '+') }}/cast/{{ character | replace(' ', '+') }}/progress/s{{ season_episode_limit[1:3] }}e{{ season_episode_limit[4:6] }}" class="btn btn-outline-primary btn-sm">Generate Summary</a>
             </div>
           </div>
         </div>

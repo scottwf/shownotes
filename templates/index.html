@@ -2,106 +2,109 @@
 {% block title %}Compare Shows or Movies{% endblock %}
 
 {% block content %}
-<div class="homepage-cards">
+<div class="container-fluid px-2 px-sm-3">
 
-  <!-- Current Viewing Status Card -->
-  <div class="card container my-3 py-3" style="font-size: 1.5rem;">
-    <div class="card-header">
-      <h2>Currently Watching</h2>
-    </div>
-    <div class="card-content">
-      <div class="container-fluid px-0">
-        <div class="row justify-content-center">
-        {% if show_metadata and show_metadata[1] %}
-          <div class="col-6 col-md-4 col-lg-3 mb-3">
-            <img src="https://image.tmdb.org/t/p/w500{{ show_metadata[1] }}"
-                 alt="{{ latest_show }} poster"
-                 class="img-fluid rounded shadow-sm"
-                 onerror="this.style.display='none';">
+  <div class="homepage-cards">
+
+    <!-- Current Viewing Status Card -->
+    <div class="card container my-3 py-3" style="font-size: 1.5rem;">
+      <div class="card-header">
+        <h2>Currently Watching</h2>
+      </div>
+      <div class="card-content">
+        <div class="container-fluid px-0">
+          <div class="row justify-content-center">
+          {% if season_banner_path %}
+            <div class="col-12">
+              <img src="https://image.tmdb.org/t/p/w780{{ season_banner_path }}"
+                   alt="{{ latest_show }} banner"
+                   class="img-fluid w-100 rounded-top"
+                   onerror="this.parentElement.style.display='none';">
+            </div>
+          {% elif show_metadata and show_metadata[1] %}
+            <div class="col-6 col-md-4 col-lg-3 mb-3">
+              <img src="https://image.tmdb.org/t/p/w500{{ show_metadata[1] }}"
+                   alt="{{ latest_show }} poster"
+                   class="img-fluid rounded shadow-sm"
+                   onerror="this.style.display='none';">
+            </div>
+          {% endif %}
+          <div class="col-12 bg-light px-4 py-3 rounded-bottom" style="font-size: 1.3rem;">
+            {% if latest_show %}
+              <h2 class="h2 display-6 mb-2">
+                <a href="/show/{{ latest_show | replace(' ', '+') }}/progress/S{{ '%02d'|format(current_season|int) }}E{{ '%02d'|format(current_episode|int) }}"
+                   class="text-primary fw-bold text-decoration-none"
+                   onmouseover="this.classList.add('text-dark')"
+                   onmouseout="this.classList.remove('text-dark')">
+                  {{ latest_show }}
+                </a>
+              </h2>
+            {% endif %}
+            {% if current_season and current_episode %}
+              <p class="fs-3 fw-normal mb-2">Season: {{ current_season }} &nbsp; Episode: {{ current_episode }}</p>
+            {% endif %}
+            {% if current_user %}
+              <p class="fs-3 fw-normal"><strong>Username:</strong> {{ current_user }}</p>
+            {% endif %}
+            <p class="fs-3 fw-normal">You can explore this show's characters and summaries as you watch!</p>
+            {% if show_metadata and show_metadata[2] %}
+              <p class="fst-italic mt-3 fs-3">{{ show_metadata[2] }}</p>
+            {% endif %}
           </div>
-        {% endif %}
-        {% if season_banner_path %}
-          <div class="col-12">
-            <img src="https://image.tmdb.org/t/p/w780{{ season_banner_path }}"
-                 alt="{{ latest_show }} banner"
-                 class="img-fluid w-100 rounded-top"
-                 onerror="this.parentElement.style.display='none';">
           </div>
-        {% endif %}
-        <div class="col-12 bg-light px-4 py-3 rounded-bottom" style="font-size: 1.3rem;">
-          {% if latest_show %}
-            <h2 class="h2 display-6 mb-2">
-              <a href="/show/{{ latest_show | urlencode }}"
-                 class="text-primary fw-bold text-decoration-none"
-                 onmouseover="this.classList.add('text-dark')"
-                 onmouseout="this.classList.remove('text-dark')">
-                {{ latest_show }}
-              </a>
-            </h2>
-          {% endif %}
-          {% if current_season and current_episode %}
-            <p class="fs-3 fw-normal mb-2">Season: {{ current_season }} &nbsp; Episode: {{ current_episode }}</p>
-          {% endif %}
-          {% if current_user %}
-            <p class="fs-3 fw-normal"><strong>Username:</strong> {{ current_user }}</p>
-          {% endif %}
-          <p class="fs-3 fw-normal">You can explore this show's characters and summaries as you watch!</p>
-          {% if show_metadata and show_metadata[2] %}
-            <p class="fst-italic mt-3 fs-3">{{ show_metadata[2] }}</p>
-          {% endif %}
         </div>
+        {% if top_characters %}
+        <h2>Main Characters</h2>
+        <div class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3 justify-content-center">
+          {% for character, actor, episodes in top_characters %}
+            <a href="/{{ latest_show | replace(' ', '+') }}/cast/{{ character | replace(' ', '+') }}/progress/s{{ '%02d'|format(current_season|int) }}e{{ '%02d'|format(current_episode|int) }}" style="text-decoration: none; color: inherit;">
+              <div class="character-card p-3 bg-light rounded text-center shadow-sm small" style="font-size: 1.3rem; padding: 1rem; min-width: 220px; flex: 1 1 220px; max-width: 260px;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                {% if actor_images[character] %}
+                  <img src="{{ actor_images[character] }}" alt="{{ character }}" style="width: 100%; height: auto; border-radius: 6px; aspect-ratio: 3/4; object-fit: cover;">
+                {% endif %}
+                <div class="character-name fw-semibold mt-2 small">{{ character }}</div>
+                <div class="character-actor text-muted small">{{ actor }}</div>
+                <div class="character-episodes text-secondary small">{{ episodes }} episodes</div>
+              </div>
+            </a>
+          {% endfor %}
+        </div>
+        {% endif %}
         </div>
       </div>
-      {% if top_characters %}
-      <h2>Main Characters</h2>
-      <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-1 justify-content-center">
-        {% for character, actor, episodes in top_characters %}
-          <a href="/character-summary/{{ character | urlencode }}?show={{ latest_show | urlencode }}&actor={{ actor | urlencode }}&season={{ current_season }}&episode={{ current_episode }}" style="text-decoration: none; color: inherit;">
-            <div class="character-card p-2 bg-light rounded text-center shadow-sm small" style="font-size: 1.4rem; padding: 0.5rem;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-              {% if actor_images[character] %}
-                <img src="{{ actor_images[character] }}" alt="{{ character }}" style="width: 100%; border-radius: 6px; aspect-ratio: 2/3; object-fit: cover;">
-              {% endif %}
-              <div class="character-name fw-semibold mt-2 small">{{ character }}</div>
-              <div class="character-actor text-muted small">{{ actor }}</div>
-              <div class="character-episodes text-secondary small">{{ episodes }} episodes</div>
-            </div>
+    </div>
+
+  </div>
+
+  {% if recent_views %}
+  <div class="recent-plays" style="margin-top: 40px; text-align: center;">
+    <h3 class="h5">Recent Views</h3>
+    <ul style="list-style-type: none; padding: 0;">
+      {% for item in recent_views if item.username == 'woodsfehr' %}
+        <li style="margin-bottom: 10px;">
+          <strong>{{ item.show }}</strong> — Season {{ item.season }}, Episode {{ item.episode }} 
+          <br>
+          <span class="text-muted small">Viewed by {{ item.username }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if not latest_show and recent_shows %}
+    <div class="recent-shows">
+      <h2>Recently Explored Shows</h2>
+      <div class="card-grid" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
+        {% for show in recent_shows %}
+          <a href="/show/{{ show | replace(' ', '+') }}" class="card" style="text-decoration: none; color: inherit; max-width: 200px; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center;">
+            <h3>{{ show }}</h3>
           </a>
         {% endfor %}
       </div>
-      {% endif %}
-      </div>
     </div>
-  </div>
-
+  {% endif %}
 </div>
 
-{% if recent_views %}
-<div class="recent-plays" style="margin-top: 40px; text-align: center;">
-  <h3 class="h5">Recent Views</h3>
-  <ul style="list-style-type: none; padding: 0;">
-    {% for item in recent_views %}
-      <li style="margin-bottom: 10px;">
-        <strong>{{ item.show }}</strong> — Season {{ item.season }}, Episode {{ item.episode }} 
-        <br>
-        <span class="text-muted small">Viewed by {{ item.username }}</span>
-      </li>
-    {% endfor %}
-  </ul>
-</div>
-{% endif %}
-
-{% if not latest_show and recent_shows %}
-  <div class="recent-shows">
-    <h2>Recently Explored Shows</h2>
-    <div class="card-grid" style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
-      {% for show in recent_shows %}
-        <a href="/show/{{ show | urlencode }}" class="card" style="text-decoration: none; color: inherit; max-width: 200px; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center;">
-          <h3>{{ show }}</h3>
-        </a>
-      {% endfor %}
-    </div>
-  </div>
-{% endif %}
 {% endblock %}
 
 {% block scripts %}

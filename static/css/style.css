@@ -336,3 +336,32 @@ h2 {
     font-size: 1.4rem;
   }
 }
+/* === CHARACTER SUMMARY REWORK === */
+.profile-img-summary {
+  width: 120px;
+  height: auto;
+  border-radius: 8px;
+  object-fit: cover;
+  margin-right: 1rem;
+}
+
+.char-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.char-actor {
+  font-size: 1rem;
+  color: #777;
+  font-style: italic;
+}
+
+.char-quote {
+  font-style: italic;
+  font-size: 1.2rem;
+  color: #555;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  border-left: 3px solid #ccc;
+}

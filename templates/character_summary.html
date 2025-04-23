@@ -5,31 +5,60 @@
   {% if summary %}
     <div class="card mx-auto" style="max-width: 700px;">
       <div class="card-body text-center">
-        {% if image_url %}
-          <img src="{{ image_url }}" class="profile-img-large mb-3" alt="{{ character }}">
-        {% endif %}
-
-        <h2 class="char-title">{{ character }}</h2>
-        {% if actor_name %}
-          <p class="char-actor text-muted">Played by {{ actor_name }}</p>
-        {% endif %}
-
-        {% if summary.quote %}
-          <blockquote class="char-quote">“{{ summary.quote }}”</blockquote>
-        {% endif %}
+        <div class="d-flex align-items-start mb-3">
+          {% if image_url %}
+            <img src="{{ image_url }}" class="me-3 profile-img-summary" alt="{{ character }}">
+          {% endif %}
+          <div class="d-flex flex-column justify-content-center text-start">
+            <h2 class="char-title mb-1">{{ character | replace('+', ' ') }}</h2>
+            {% if actor_name %}
+              <p class="char-actor text-muted fst-italic mb-1">Played by {{ actor_name }}</p>
+            {% endif %}
+            {% if summary.quote %}
+              <blockquote class="char-quote">“{{ summary.quote }}”</blockquote>
+            {% endif %}
+            <p class="text-muted small">No spoilers beyond Season {{ season }}, Episode {{ episode }}.</p>
+          </div>
+        </div>
 
         <div class="text-start">
           <h3 class="section-title">Personality & Traits</h3>
-          <p>{{ summary.traits or "Not available." }}</p>
+          <p>
+            {% if summary.traits and summary.traits != "N" and summary.traits != ["Not available."] %}
+              {% if summary.traits is string %}
+                {{ summary.traits | replace('"', '') }}
+              {% else %}
+                {{ summary.traits | join(', ') | replace('"', '') }}
+              {% endif %}
+            {% else %}
+              Not available.
+            {% endif %}
+          </p>
 
           <h3 class="section-title">Key Events</h3>
-          <p>{{ summary.events or "Not available." }}</p>
+          {% if summary.events and summary.events != "N" and summary.events != ["Not available."] %}
+            {% if summary.events is string %}
+              <ul>
+                <li>{{ summary.events | replace('"', '') }}</li>
+              </ul>
+            {% else %}
+              <ul>
+                {% for event in summary.events %}
+                  <li>{{ event | replace('"', '') }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          {% else %}
+            <p>Not available.</p>
+          {% endif %}
 
           <h3 class="section-title">Relationships</h3>
-          {% if summary.relationships %}
+          {% if summary.relationships and summary.relationships != "N" %}
             <ul class="list-group list-group-flush">
               {% for name, role in summary.relationships %}
-                <li class="list-group-item"><strong>{{ name }}</strong>: {{ role }}</li>
+                <li class="list-group-item">
+                  <strong>{{ name }}</strong> <em>({{ role.type }})</em>: {{ role.description }}
+                </li>
               {% endfor %}
             </ul>
           {% else %}

@@ -147,45 +147,66 @@ def get_character_summary(character, show_title, season, episode, options=None):
     return response.choices[0].message.content.strip()
 
 def parse_character_summary(text):
-    sections = {
-        "quote": "Notable Quote",
-        "traits": "Personality & Traits",
-        "events": "Key Events",
-        "relationships": "Relationships",
-        "importance": "Importance to the Story"
+    parsed = {
+        "quote": None,
+        "traits": "Not available.",
+        "events": "Not available.",
+        "relationships": [],
+        "importance": "Not available."
     }
 
-    def clean_quote(text):
-        if not text or text == "Not available.":
-            return None
-        cleaned = text.strip().strip('"“”').strip("–—").strip()
-        # Remove trailing attribution like — Walter White or - Walter
-        cleaned = re.sub(r'\s*[-–—]\s*[A-Z][a-z]+.*$', '', cleaned).strip()
-        return cleaned
+    # Normalize text for consistent parsing
+    text = text.replace('\r\n', '\n').strip()
 
-    def extract_section(header):
-        start = text.find(header)
-        if start == -1:
-            return "Not available."
-        end = min([
-            text.find(h, start + 1)
-            for h in sections.values()
-            if h != header and text.find(h, start + 1) != -1
-        ] + [len(text)])
-        content = text[start + len(header):end].strip()
-        return content.lstrip(": ").replace("\n", " ").strip()
+    # Quote: allow quote: to appear on same line or next line, and accept various quote marks
+    quote_match = re.search(
+        r'## Notable Quote\s*(?:quote:\s*)?(?:[“"]?(.+?)[”"]?\s*)?(?=\n##|\Z)',
+        text, re.DOTALL)
+    if quote_match and quote_match.group(1):
+        parsed["quote"] = quote_match.group(1).strip()
 
-    parsed = {key: extract_section(header) for key, header in sections.items()}
-    parsed['quote'] = clean_quote(parsed.get('quote'))
+    # Traits: support YAML-like and markdown-style lists
+    traits_section = re.search(r'## Personality & Traits\s*(?:traits:\s*)?((?:- .+\n?)+)', text)
+    if traits_section:
+        parsed["traits"] = [line.strip('- ').strip() for line in traits_section.group(1).splitlines() if line.strip()]
+    else:
+        parsed["traits"] = "Not available."
 
-    # Parse relationships into a list of (name, role)
-    rel_lines = parsed.get("relationships", "").split("\n")
-    parsed['relationships'] = []
-    for line in rel_lines:
-        match = re.match(r"[-•]?\s*(.+?)[\s:–-]+\s*(.+)", line.strip())
-        if match:
-            name, role = match.groups()
-            parsed['relationships'].append((name.strip(), role.strip()))
+    # Events: support YAML-like and markdown-style lists
+    events_section = re.search(r'## Key Events\s*(?:events:\s*)?((?:- .+\n?)+)', text)
+    if events_section:
+        parsed["events"] = [line.strip('- ').strip() for line in events_section.group(1).splitlines() if line.strip()]
+    else:
+        parsed["events"] = "Not available."
+
+    # Relationships: support nested indentation and more robust block grouping
+    rel_section = re.search(r'## Significant Relationships\s*((?:relationship_\d+:\s*[\s\S]+?)(?=\n\S|$))', text)
+    if rel_section:
+        rel_blocks = re.findall(
+            r'relationship_\d+:\s*name:\s+"(.*?)"\s+role:\s+"(.*?)"\s+description:\s+"(.*?)"',
+            rel_section.group(1), re.DOTALL)
+        parsed["relationships"] = [(f"{name} ({role})", desc.strip()) for name, role, desc in rel_blocks]
+    # After parsing, exclude results if relationships is empty
+    if not parsed["relationships"]:
+        parsed["relationships"] = []
+
+    # Importance: get text after ## Importance to the Story until next header
+    importance_section = re.search(r'## Importance to the Story\s*(.+?)(?=\n##|\Z)', text, re.DOTALL)
+    if importance_section:
+        parsed["importance"] = importance_section.group(1).strip()
+
+    # If quote is empty string, set to None
+    if parsed["quote"] is not None and parsed["quote"].strip() == "":
+        parsed["quote"] = None
+
+    # Fallback: format traits and events appropriately
+    if isinstance(parsed["traits"], list):
+        cleaned_traits = [t.strip().strip('"') for t in parsed["traits"] if t.strip()]
+        parsed["traits"] = ", ".join(cleaned_traits) if cleaned_traits else "Not available."
+    if isinstance(parsed["events"], list):
+        cleaned_events = ['- ' + e.strip().strip('"') for e in parsed["events"] if isinstance(e, str) and e.strip()]
+        parsed["events"] = "\n".join(cleaned_events) if cleaned_events else "Not available."
+
     return parsed
     
 def save_character_summary_to_db(character, show_title, season, episode, raw_summary, parsed):
@@ -199,8 +220,8 @@ def save_character_summary_to_db(character, show_title, season, episode, raw_sum
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         character, show_title, season, episode, raw_summary,
-        parsed.get('traits'), 
-        parsed.get('events'),
+        json.dumps(parsed.get('traits', [])), 
+        json.dumps(parsed.get('events', [])),
         json.dumps(parsed.get('relationships', [])),  
         parsed.get('importance'),
         parsed.get('quote')
@@ -242,6 +263,13 @@ def summarize_character(character, show_title, season, episode, options=None):
     """
     raw_summary = get_character_summary(character, show_title, season, episode, options)
     parsed = parse_character_summary(raw_summary)
+    print("[DEBUG] Raw Summary:\n", raw_summary)
+    print("[DEBUG] Parsed Summary Keys:", parsed.keys())
+    print("[DEBUG] Parsed Traits:", parsed.get("traits"), type(parsed.get("traits")))
+    print("[DEBUG] Parsed Events:", parsed.get("events"), type(parsed.get("events")))
+    print("[DEBUG] Parsed Relationships:", parsed.get("relationships"))
+    print("[DEBUG] Parsed Importance:", parsed.get("importance"))
+    print("[DEBUG] Parsed Quote:", parsed.get("quote"))
 
     # Estimate token usage (approx. 4 characters per token)
     tokens = len(raw_summary) // 4
@@ -498,10 +526,11 @@ def get_top_characters(show_title, limit=10):
     conn = sqlite3.connect("data/shownotes.db")
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT character_name, actor_name, episode_count
+        SELECT character_name, actor_name, MAX(episode_count) as max_count
         FROM top_characters
         WHERE show_title = ?
-        ORDER BY episode_count DESC
+        GROUP BY character_name, actor_name
+        ORDER BY max_count DESC
         LIMIT ?
     """, (show_title, limit))
     rows = cursor.fetchall()
