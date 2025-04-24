@@ -1,4 +1,4 @@
-cd ~/venn-cast
+cd ~/shownotes
 
 mkdir -p templates
 
