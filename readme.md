@@ -75,30 +75,6 @@ journalctl -u shownotes -e
 
 ---
 
-## 🌐 Access Remotely
-
-### 1. **Local Network (via TailScale)**
-
-If you're using TailScale, your ShowNotes app will be available at:  
-`http://100.106.125.10:5000` or `:5002` depending on your `run.py` port.
-
-### 2. **Using `ngrok` for Public Access**
-
-If you haven’t already:
-
-```bash
-npm install -g ngrok
-ngrok http 5000
-```
-
-It will provide a public HTTPS URL like:
-
-```txt
-https://12ab34cd.ngrok.io
-```
-
----
-
 ## 🧠 Developer Notes
 
 - You can edit prompts and summary structure in `app/prompts.py`
@@ -158,9 +134,6 @@ Prompts can be easily adjusted to include other attributes like motivations, key
 ## 👨‍💻 Maintainer
 
 **Scott Woods-Fehr**  
-📧 scotwoodsfehr@gmail.com  
-🛠 Hosted on Raspberry Pi 4  
-🔒 TailScale enabled  
 📁 GitHub: [scottwf](https://github.com/scottwf)
 
 ---
