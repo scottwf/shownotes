@@ -52,6 +52,7 @@ from app.utils import (
     save_character_summary_to_db,
     find_actor_by_name,
     get_all_characters_for_show,
+    fetch_sonarr_calendar, # Added fetch_sonarr_calendar
 )
 from app.prompt_builder import build_character_prompt, build_quote_prompt, build_relationships_prompt
 
@@ -341,16 +342,24 @@ def plex_webhook():
 
             # Only update current_watch if username == "woodsfehr"
             if username == "woodsfehr":
-                if cursor.fetchone()[0] == 0:
-                    db.execute("""
-                        INSERT INTO current_watch (show_title, season, episode, username)
-                        VALUES (?, ?, ?, ?)
-                    """, (show_title, int(season), int(episode), username))
-                    logging.info(f"✔️ Updated current_watch for {username}: {show_title} S{season}E{episode}")
-                else:
-                    logging.info(f"⏭️ Duplicate webhook skipped for: {show_title} S{season}E{episode}")
+                # Delete existing entries for woodsfehr
+                db.execute("""
+                    DELETE FROM current_watch WHERE username = ?
+                """, (username,))
+                logging.info(f"🧹 Cleared existing current_watch entries for {username}")
+
+                # Insert the new record
+                db.execute("""
+                    INSERT INTO current_watch (show_title, season, episode, username)
+                    VALUES (?, ?, ?, ?)
+                """, (show_title, int(season), int(episode), username))
+                logging.info(f"✔️ Inserted new current_watch for {username}: {show_title} S{season}E{episode}")
             else:
-                logging.info(f"🛑 Ignoring update from non-primary user: {username}")
+                # For other users, we might still want to log their activity or handle it differently.
+                # For now, we're just logging that we're ignoring them for current_watch.
+                # The old logic for skipping recent duplicates for 'woodsfehr' is removed
+                # as we now explicitly delete before insert for this user.
+                logging.info(f"🛑 Ignoring current_watch update for non-primary user: {username}")
 
             db.commit()
             db.close()
@@ -800,9 +809,26 @@ def init_db():
                 poster_url TEXT
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS arr_service_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                service_name TEXT UNIQUE NOT NULL,
+                api_url TEXT,
+                api_key TEXT,
+                enabled INTEGER DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # Pre-populate with default rows
+        default_services = ["sonarr", "radarr", "bazarr"]
+        for service in default_services:
+            db.execute("""
+                INSERT OR IGNORE INTO arr_service_settings (service_name, api_url, api_key, enabled)
+                VALUES (?, ?, ?, ?)
+            """, (service, "", "", 0))
         db.commit()
         db.close()
-        return "api_usage, shows, and seasons tables initialized.", 200
+        return "api_usage, shows, seasons, and arr_service_settings tables initialized and populated.", 200
     except Exception as e:
         logging.error(f"Failed to initialize database tables: {e}")
         return "Database initialization failed.", 500
@@ -994,3 +1020,56 @@ def calendar_full_data():
     except Exception as e:
         logging.exception("Error generating FullCalendar event data")
         return jsonify({"error": str(e)}), 500
+# Ensure this route is defined before routes that might use it, if any specific order is needed.
+# For now, placing it here should be fine.
+
+@main.route('/admin/services', methods=['GET'])
+def admin_services_view():
+    services_data = []
+    message = request.args.get('message')
+    try:
+        db = sqlite3.connect("data/shownotes.db")
+        db.row_factory = sqlite3.Row # Access columns by name
+        cursor = db.execute("SELECT service_name, api_url, api_key, enabled FROM arr_service_settings ORDER BY service_name")
+        services_data = cursor.fetchall()
+        db.close()
+    except Exception as e:
+        logging.error(f"Error fetching service settings: {e}")
+        # Pass an error message to the template if fetching fails
+        return render_template("admin_services.html", services=[], error="Failed to load service settings.")
+    return render_template("admin_services.html", services=services_data, message=message)
+
+@main.route('/admin/services/save', methods=['POST'])
+def admin_services_save():
+    try:
+        db = sqlite3.connect("data/shownotes.db")
+        # Loop based on the number of services expected (e.g., Sonarr, Radarr, Bazarr)
+        # Assuming they are submitted in order or identifiable by a hidden field if dynamic
+        num_services = 3 # Adjust if more services are added or use a dynamic count from form
+
+        for i in range(num_services):
+            service_name = request.form.get(f'service_name_{i}')
+            api_url = request.form.get(f'api_url_{i}')
+            api_key = request.form.get(f'api_key_{i}')
+            # Checkbox value is '1' if checked, None if not. Default to 0.
+            enabled = 1 if request.form.get(f'enabled_{i}') else 0
+
+            if service_name: # Ensure service_name is present
+                db.execute("""
+                    UPDATE arr_service_settings
+                    SET api_url = ?, api_key = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE service_name = ?
+                """, (api_url, api_key, enabled, service_name))
+
+        db.commit()
+        db.close()
+        logging.info("Successfully updated 'Arr' service settings.")
+        # Redirect back to the services page with a success message
+        from flask import redirect, url_for
+        return redirect(url_for('main.admin_services_view', message="Settings saved successfully!"))
+    except Exception as e:
+        logging.error(f"Error saving service settings: {e}")
+        traceback.print_exc()
+        # In case of error, redirect back with an error message
+        from flask import redirect, url_for
+        return redirect(url_for('main.admin_services_view', message=f"Error: {str(e)}"))

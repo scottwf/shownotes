@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage 'Arr' Service Settings</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        h1 { color: #333; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .service-block { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; }
+        .service-block h2 { margin-top: 0; color: #555; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="url"] { width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; }
+        input[type="checkbox"] { margin-right: 5px; }
+        .button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        .button:hover { background-color: #0056b3; }
+        .alert { padding: 10px; margin-bottom: 15px; border-radius: 4px; }
+        .alert-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .admin-nav { margin-bottom: 20px; }
+        .admin-nav a { text-decoration: none; color: #007bff; margin-right: 15px; }
+        .admin-nav a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="admin-nav">
+            <!-- Assuming admin_menu.html or similar might be included server-side or linked manually -->
+            <a href="/admin/summaries">View Summaries</a>
+            <a href="/admin/api-usage">API Usage</a>
+            <a href="/admin/webhook-log">Webhook Log</a>
+            <a href="/admin/init-db">Init DB</a>
+            <a href="/admin/services">'Arr Services</a>
+        </div>
+        <h1>Manage 'Arr' Service Settings</h1>
+
+        {% if message %}
+            <div class="alert alert-success">{{ message }}</div>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('main.admin_services_save') }}">
+            {% for service in services %}
+            <div class="service-block">
+                <h2>{{ service.service_name | capitalize }}</h2>
+                <input type="hidden" name="service_name_{{ loop.index0 }}" value="{{ service.service_name }}">
+
+                <label for="api_url_{{ service.service_name }}">API URL:</label>
+                <input type="url" id="api_url_{{ service.service_name }}" name="api_url_{{ loop.index0 }}" value="{{ service.api_url | default('', true) }}" placeholder="e.g., http://localhost:8989">
+
+                <label for="api_key_{{ service.service_name }}">API Key:</label>
+                <input type="text" id="api_key_{{ service.service_name }}" name="api_key_{{ loop.index0 }}" value="{{ service.api_key | default('', true) }}" placeholder="Enter API Key">
+
+                <label for="enabled_{{ service.service_name }}">
+                    <input type="checkbox" id="enabled_{{ service.service_name }}" name="enabled_{{ loop.index0 }}" value="1" {% if service.enabled %}checked{% endif %}>
+                    Enabled
+                </label>
+            </div>
+            {% endfor %}
+            <button type="submit" class="button">Save Settings</button>
+        </form>
+    </div>
+</body>
+</html>

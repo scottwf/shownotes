@@ -5,6 +5,7 @@ import sqlite3
 import re
 import json
 import logging
+from datetime import datetime, timedelta # Added datetime, timedelta
 from openai import OpenAI
 from app.prompt_builder import build_character_prompt
 
@@ -558,3 +559,81 @@ def get_season_details(show_id):
         for s in seasons
         if s.get("season_number") != 0  # Skip specials
     ]
+
+def fetch_sonarr_calendar(days=7):
+    """
+    Fetches upcoming episodes from Sonarr calendar.
+    """
+    db_path = "data/shownotes.db"
+    api_url = None
+    api_key = None
+    enabled = 0
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT api_url, api_key, enabled
+            FROM arr_service_settings
+            WHERE service_name = 'sonarr'
+        """)
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            api_url, api_key, enabled = row
+        else:
+            logging.warning("Sonarr settings not found in arr_service_settings.")
+            return []
+
+    except sqlite3.Error as e:
+        logging.error(f"Database error while fetching Sonarr settings: {e}")
+        return []
+
+    if not enabled:
+        logging.info("Sonarr is not enabled in settings.")
+        return []
+
+    if not api_url or not api_key:
+        logging.warning("Sonarr API URL or API Key is not configured.")
+        return []
+
+    # Clean API URL (remove trailing slashes)
+    cleaned_api_url = api_url.rstrip('/')
+
+    sonarr_endpoint = f"{cleaned_api_url}/api/v3/calendar" # Using /api/v3/
+
+    start_date = datetime.now()
+    end_date = start_date + timedelta(days=days)
+
+    params = {
+        'start': start_date.isoformat(),
+        'end': end_date.isoformat(),
+        # 'unmonitored': 'true' # Optionally include unmonitored shows
+    }
+    headers = {
+        'X-Api-Key': api_key
+    }
+
+    try:
+        response = requests.get(sonarr_endpoint, params=params, headers=headers, timeout=10)
+        response.raise_for_status()  # Raises an HTTPError for bad responses (4XX or 5XX)
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"HTTP error fetching Sonarr calendar: {e.response.status_code} - {e.response.text}")
+        return []
+    except requests.exceptions.ConnectionError as e:
+        logging.error(f"Connection error fetching Sonarr calendar: {e}")
+        return []
+    except requests.exceptions.Timeout as e:
+        logging.error(f"Timeout fetching Sonarr calendar: {e}")
+        return []
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error fetching Sonarr calendar: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        logging.error(f"Error decoding Sonarr calendar JSON response: {e}")
+        return []
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while fetching Sonarr calendar: {e}")
+        return []
